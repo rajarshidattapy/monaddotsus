@@ -1,4 +1,4 @@
-**MonadSus** 
+# MonadSus
 
 
 Monadsus is a spectator-only, multi-agent social deduction simulation where:
@@ -334,4 +334,3 @@ That’s fine.
 This is **AI systems research wearing a game skin**.
 
 ---
-”
