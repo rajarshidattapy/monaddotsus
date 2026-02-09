@@ -349,34 +349,34 @@ class Game:
         self.light_bulb_icon_dim = pg.image.load("Assets/Images/UI/light_bulb_icon_dim.png").convert_alpha()
         self.light_bulb_icon_dim = pg.transform.smoothscale(self.light_bulb_icon_dim, (75, 90)).convert_alpha()
 
-        self.invsible_player_image = pg.image.load("Assets\Images\Player\invisble3.png").convert_alpha()
+        self.invsible_player_image = pg.image.load("Assets/Images/Player/invisble3.png").convert_alpha()
         self.invsible_player_image = pygame.transform.scale(self.invsible_player_image, (64, 86)).convert_alpha()
-        self.imposter_among_us_img = pygame.image.load('Assets\Images\Menu\imposteramongus.png').convert_alpha()
+        self.imposter_among_us_img = pygame.image.load('Assets/Images/Menu/imposteramongus.png').convert_alpha()
         self.kill_victim_anim_img = []
         for i in range(1, 19):
             self.kill_victim_anim_img.append(pygame.image.load('Assets/Images/Alerts/' + 'kill' + str(i) + '.png').convert_alpha())
         self.cafe_comp_img = pygame.image.load(
-            'Assets\Images\Tasks\Become Imposter\cafe_computer_base.png').convert_alpha()
-        self.cafe_comp_check_img = pygame.image.load('Assets\Images\Tasks\Become Imposter\check.png').convert_alpha()
-        self.chat_img = pygame.image.load('Assets\Images\Meeting\chat.png').convert_alpha()
-        self.vote_img = pygame.image.load('Assets\Images\Meeting\e_vote_base.png').convert_alpha()
-        self.vote_tick_img = pygame.image.load('Assets\Images\Meeting\select_vote.png').convert_alpha()
-        self.chat_img_dead = pygame.image.load('Assets\Images\Meeting\chat_dead.png').convert_alpha()
-        self.vote_img_dead = pygame.image.load('Assets\Images\Meeting\e_vote_base_dead.png').convert_alpha()
-        self.eject_screen_img = pygame.image.load('Assets\Images\Alerts\eject.png').convert_alpha()
+            'Assets/Images/Tasks/Become Imposter/cafe_computer_base.png').convert_alpha()
+        self.cafe_comp_check_img = pygame.image.load('Assets/Images/Tasks/Become Imposter/check.png').convert_alpha()
+        self.chat_img = pygame.image.load('Assets/Images/Meeting/chat.png').convert_alpha()
+        self.vote_img = pygame.image.load('Assets/Images/Meeting/e_vote_base.png').convert_alpha()
+        self.vote_tick_img = pygame.image.load('Assets/Images/Meeting/select_vote.png').convert_alpha()
+        self.chat_img_dead = pygame.image.load('Assets/Images/Meeting/chat_dead.png').convert_alpha()
+        self.vote_img_dead = pygame.image.load('Assets/Images/Meeting/e_vote_base_dead.png').convert_alpha()
+        self.eject_screen_img = pygame.image.load('Assets/Images/Alerts/eject.png').convert_alpha()
         self.navigation_screen_img = pygame.image.load(
-            'Assets\Images\Tasks\Stabilize Steering\stabilizer_base.png').convert_alpha()
+            'Assets/Images/Tasks/Stabilize Steering/stabilizer_base.png').convert_alpha()
         self.full_garbage_screen_img = pygame.image.load(
-            'Assets\Images\Tasks\Empty Garbage\garbage_base_full.png').convert_alpha()
+            'Assets/Images/Tasks/Empty Garbage/garbage_base_full.png').convert_alpha()
         self.empty_garbage_screen_img = pygame.image.load(
-            'Assets\Images\Tasks\Empty Garbage\garbage_base_empty.png').convert_alpha()
+            'Assets/Images/Tasks/Empty Garbage/garbage_base_empty.png').convert_alpha()
         self.reboot_wifi_screen_img = pygame.image.load(
-            'Assets\Images\Tasks\Reboot Wifi\panel_wifi_bg.png').convert_alpha()
-        self.wifi_on_img = pygame.image.load('Assets\Images\Tasks\Reboot Wifi\wifi_on.png').convert_alpha()
+            'Assets/Images/Tasks/Reboot Wifi/panel_wifi_bg.png').convert_alpha()
+        self.wifi_on_img = pygame.image.load('Assets/Images/Tasks/Reboot Wifi/wifi_on.png').convert_alpha()
         self.wifi_liver_down_img = pygame.image.load(
-            'Assets\Images\Tasks\Reboot Wifi\panel_wifi-lever.png').convert_alpha()
+            'Assets/Images/Tasks/Reboot Wifi/panel_wifi-lever.png').convert_alpha()
         self.electricity_wire_img = pygame.image.load(
-            'Assets\Images\Tasks\Fix Wiring\electricity_wire_base1.png').convert_alpha()
+            'Assets/Images/Tasks/Fix Wiring/electricity_wire_base1.png').convert_alpha()
         self.electricity_wire_red_img = pygame.image.load('Assets/Images/Tasks/Fix Wiring/red_wire.png').convert_alpha()
         self.electricity_wire_blue_img = pygame.image.load(
             'Assets/Images/Tasks/Fix Wiring/blue_wire.png').convert_alpha()
