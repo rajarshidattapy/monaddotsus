@@ -7,20 +7,36 @@ Connects the autonomous game engine to on-chain contracts:
 - PredictionMarket: Create/resolve prediction markets
 - GameResolver: Batch-resolve markets when game ends
 
-This module can operate in two modes:
-1. Simulation mode (default): Logs events locally, no on-chain calls
-2. Live mode: Sends transactions to Monad testnet
-
 Contract Addresses (Monad Testnet):
 - Set via environment variables or config file
 """
 
 import hashlib
 import json
+import os
 import time
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Optional, Any
 from enum import Enum
+
+# Load .env file if present
+try:
+    from dotenv import load_dotenv
+    load_dotenv()  # Loads from .env in current directory or parent
+except ImportError:
+    pass  # dotenv not installed, use system env vars only
+
+# Web3 imports - handle gracefully if not installed
+try:
+    from web3 import Web3
+    from web3.middleware.geth_poa import geth_poa_middleware
+    from eth_account import Account
+    WEB3_AVAILABLE = True
+except ImportError:
+    WEB3_AVAILABLE = False
+    Web3 = None  # type: ignore
+    geth_poa_middleware = None  # type: ignore
+    Account = None  # type: ignore
 
 
 # ---------------------------------------------------------------------------
@@ -71,6 +87,250 @@ class PredictionMarket:
     no_pool: float = 0.0
     resolved: bool = False
     outcome: Optional[bool] = None
+
+
+# ---------------------------------------------------------------------------
+# Contract ABIs (extracted from Solidity)
+# ---------------------------------------------------------------------------
+
+AGENT_REGISTRY_ABI = [
+    {
+        "inputs": [{"name": "name", "type": "string"}],
+        "name": "registerAgent",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [{"name": "agentId", "type": "uint256"}, {"name": "won", "type": "bool"}],
+        "name": "updateAgent",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "agentCount",
+        "outputs": [{"name": "", "type": "uint256"}],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [{"name": "", "type": "uint256"}],
+        "name": "agents",
+        "outputs": [
+            {"name": "name", "type": "string"},
+            {"name": "gamesPlayed", "type": "uint256"},
+            {"name": "wins", "type": "uint256"}
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "anonymous": False,
+        "inputs": [
+            {"indexed": False, "name": "agentId", "type": "uint256"},
+            {"indexed": False, "name": "name", "type": "string"}
+        ],
+        "name": "AgentCreated",
+        "type": "event"
+    },
+    {
+        "anonymous": False,
+        "inputs": [
+            {"indexed": False, "name": "agentId", "type": "uint256"},
+            {"indexed": False, "name": "won", "type": "bool"}
+        ],
+        "name": "AgentUpdated",
+        "type": "event"
+    },
+]
+
+GAME_REGISTRY_ABI = [
+    {
+        "inputs": [{"name": "gameHash", "type": "bytes32"}],
+        "name": "createGame",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [{"name": "gameId", "type": "uint256"}],
+        "name": "startGame",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [{"name": "gameId", "type": "uint256"}],
+        "name": "finishGame",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "gameCount",
+        "outputs": [{"name": "", "type": "uint256"}],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [{"name": "", "type": "uint256"}],
+        "name": "games",
+        "outputs": [
+            {"name": "id", "type": "uint256"},
+            {"name": "gameHash", "type": "bytes32"},
+            {"name": "status", "type": "uint8"},
+            {"name": "resolver", "type": "address"}
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+]
+
+PREDICTION_MARKET_ABI = [
+    {
+        "inputs": [],
+        "stateMutability": "nonpayable",
+        "type": "constructor"
+    },
+    {
+        "inputs": [{"name": "gameId", "type": "uint256"}, {"name": "question", "type": "string"}],
+        "name": "createMarket",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [{"name": "marketId", "type": "uint256"}],
+        "name": "betYes",
+        "outputs": [],
+        "stateMutability": "payable",
+        "type": "function"
+    },
+    {
+        "inputs": [{"name": "marketId", "type": "uint256"}],
+        "name": "betNo",
+        "outputs": [],
+        "stateMutability": "payable",
+        "type": "function"
+    },
+    {
+        "inputs": [{"name": "marketId", "type": "uint256"}, {"name": "outcome", "type": "bool"}],
+        "name": "resolveMarket",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [{"name": "marketId", "type": "uint256"}],
+        "name": "claim",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "marketCount",
+        "outputs": [{"name": "", "type": "uint256"}],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "owner",
+        "outputs": [{"name": "", "type": "address"}],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [{"name": "", "type": "uint256"}],
+        "name": "markets",
+        "outputs": [
+            {"name": "gameId", "type": "uint256"},
+            {"name": "question", "type": "string"},
+            {"name": "yesPool", "type": "uint256"},
+            {"name": "noPool", "type": "uint256"},
+            {"name": "resolved", "type": "bool"},
+            {"name": "outcome", "type": "bool"}
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "anonymous": False,
+        "inputs": [
+            {"indexed": False, "name": "marketId", "type": "uint256"},
+            {"indexed": False, "name": "gameId", "type": "uint256"},
+            {"indexed": False, "name": "question", "type": "string"}
+        ],
+        "name": "MarketCreated",
+        "type": "event"
+    },
+    {
+        "anonymous": False,
+        "inputs": [
+            {"indexed": False, "name": "marketId", "type": "uint256"},
+            {"indexed": False, "name": "yes", "type": "bool"},
+            {"indexed": False, "name": "amount", "type": "uint256"}
+        ],
+        "name": "BetPlaced",
+        "type": "event"
+    },
+    {
+        "anonymous": False,
+        "inputs": [
+            {"indexed": False, "name": "marketId", "type": "uint256"},
+            {"indexed": False, "name": "outcome", "type": "bool"}
+        ],
+        "name": "MarketResolved",
+        "type": "event"
+    },
+]
+
+GAME_RESOLVER_ABI = [
+    {
+        "inputs": [
+            {"name": "_gameRegistry", "type": "address"},
+            {"name": "_predictionMarket", "type": "address"}
+        ],
+        "stateMutability": "nonpayable",
+        "type": "constructor"
+    },
+    {
+        "inputs": [
+            {"name": "gameId", "type": "uint256"},
+            {"name": "marketIds", "type": "uint256[]"},
+            {"name": "outcomes", "type": "bool[]"}
+        ],
+        "name": "resolveGame",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "owner",
+        "outputs": [{"name": "", "type": "address"}],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "gameRegistry",
+        "outputs": [{"name": "", "type": "address"}],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "predictionMarket",
+        "outputs": [{"name": "", "type": "address"}],
+        "stateMutability": "view",
+        "type": "function"
+    },
+]
 
 
 # ---------------------------------------------------------------------------
@@ -135,128 +395,286 @@ class EventLogger:
 
 
 # ---------------------------------------------------------------------------
-# Blockchain Connector (Simulation Mode)
+# Blockchain Connector
 # ---------------------------------------------------------------------------
 
 class BlockchainConnector:
     """
     Connects game to smart contracts.
     
-    In simulation mode (default), all calls are logged locally.
-    In live mode, transactions are sent to Monad testnet.
+    Live mode requires:
+    - RPC URL (e.g., Monad testnet/mainnet)
+    - Private key for signing transactions
+    - Contract addresses (set via env vars or direct assignment)
+    
+    Environment variables:
+    - MONAD_RPC_URL: RPC endpoint
+    - MONAD_PRIVATE_KEY: Private key for signing transactions
+    - AGENT_REGISTRY_ADDRESS: Contract address
+    - GAME_REGISTRY_ADDRESS: Contract address
+    - PREDICTION_MARKET_ADDRESS: Contract address
+    - GAME_RESOLVER_ADDRESS: Contract address
+    
+    For user betting via MetaMask, use betting.html web interface.
     """
 
-    def __init__(self, live_mode: bool = False, rpc_url: str = "", private_key: str = ""):
+    def __init__(
+        self,
+        live_mode: bool = False,
+        rpc_url: str = "",
+        private_key: str = "",
+    ):
         self.live_mode = live_mode
-        self.rpc_url = rpc_url
-        self.private_key = private_key
+        self.rpc_url = rpc_url or os.environ.get("MONAD_RPC_URL", "")
+        self.private_key = private_key or os.environ.get("MONAD_PRIVATE_KEY", "")
 
-        # Contract addresses (set these for live mode)
-        self.agent_registry_address = ""
-        self.game_registry_address = ""
-        self.prediction_market_address = ""
-        self.game_resolver_address = ""
+        # Contract addresses from env or direct assignment
+        self.agent_registry_address = os.environ.get("AGENT_REGISTRY_ADDRESS", "")
+        self.game_registry_address = os.environ.get("GAME_REGISTRY_ADDRESS", "")
+        self.prediction_market_address = os.environ.get("PREDICTION_MARKET_ADDRESS", "")
+        self.game_resolver_address = os.environ.get("GAME_RESOLVER_ADDRESS", "")
 
-        # Simulation state
-        self.agents: dict[str, dict] = {}  # agent_id -> {name, games_played, wins}
-        self.games: dict[int, dict] = {}   # game_id -> {hash, status}
-        self.markets: dict[int, PredictionMarket] = {}
-        self.next_game_id = 1
-        self.next_market_id = 1
+        # Web3 instance and contracts (lazy loaded)
+        self._web3: Optional[Any] = None
+        self._account: Optional[Any] = None
+        self._contracts: dict[str, Any] = {}
+        
+        # Local tracking for agent name -> on-chain ID mapping
+        self.agent_name_to_id: dict[str, int] = {}
+        
+        # Initialize Web3 if in live mode
+        if self.live_mode:
+            self._init_web3()
 
-        # Web3 instance (lazy loaded)
-        self._web3 = None
+    def _init_web3(self):
+        """Initialize Web3 connection and contract instances."""
+        if not WEB3_AVAILABLE or Web3 is None or Account is None:
+            raise RuntimeError(
+                "web3.py or eth_account not installed or failed to import. Run: pip install web3"
+            )
+
+        if not self.rpc_url:
+            raise ValueError("RPC URL required for live mode. Set MONAD_RPC_URL env var.")
+
+        if not self.private_key:
+            raise ValueError(
+                "Private key required for live mode. Set MONAD_PRIVATE_KEY env var."
+            )
+
+        # Connect to network
+        try:
+            self._web3 = Web3(Web3.HTTPProvider(self.rpc_url))
+        except Exception as e:
+            raise RuntimeError(f"Web3 initialization failed: {e}")
+
+        # Add POA middleware for networks that need it (like some testnets)
+        if geth_poa_middleware is not None:
+            self._web3.middleware_onion.inject(geth_poa_middleware, layer=0)
+
+        if not self._web3.is_connected():
+            raise ConnectionError(f"Failed to connect to {self.rpc_url}")
+
+        print(f"  [CHAIN] Connected to {self.rpc_url}")
+
+        # Load account from private key
+        try:
+            self._account = Account.from_key(self.private_key)
+        except Exception as e:
+            raise RuntimeError(f"Account creation failed: {e}")
+        if not hasattr(self._account, 'address'):
+            raise RuntimeError("Account object missing address attribute. Check eth_account installation.")
+        # Print account address safely
+        account_addr = getattr(self._account, 'address', None)
+        print(f"  [CHAIN] Account: {account_addr}")
+
+        # Initialize contract instances
+        self._init_contracts()
+    
+    def _init_contracts(self):
+        """Initialize contract instances with ABIs."""
+        assert self._web3 is not None
+        
+        contract_configs = [
+            ("AgentRegistry", self.agent_registry_address, AGENT_REGISTRY_ABI),
+            ("GameRegistry", self.game_registry_address, GAME_REGISTRY_ABI),
+            ("PredictionMarket", self.prediction_market_address, PREDICTION_MARKET_ABI),
+            ("GameResolver", self.game_resolver_address, GAME_RESOLVER_ABI),
+        ]
+        
+        for name, address, abi in contract_configs:
+            if address:
+                checksum_addr = self._web3.to_checksum_address(address)
+                self._contracts[name] = self._web3.eth.contract(
+                    address=checksum_addr, abi=abi
+                )
+                print(f"  [CHAIN] Loaded {name} at {address[:10]}...")
+            else:
+                print(f"  [CHAIN] Warning: {name} address not set")
+
+    def _send_transaction(self, contract_name: str, method: str, args: list) -> Any:
+        """Build, sign, and send a transaction. Returns receipt."""
+        assert self._web3 is not None
+        assert self._account is not None
+        
+        if contract_name not in self._contracts:
+            raise ValueError(f"Contract {contract_name} not initialized")
+        
+        contract = self._contracts[contract_name]
+        func = getattr(contract.functions, method)(*args)
+        
+        return self._send_transaction_private_key(contract, func, contract_name, method)
+    
+    def _send_transaction_private_key(self, contract: Any, func: Any, contract_name: str, method: str) -> Any:
+        """Send transaction using private key signing."""
+        assert self._web3 is not None
+        assert self._account is not None
+        
+        # Build transaction
+        tx = func.build_transaction({
+            "from": self._account.address,
+            "nonce": self._web3.eth.get_transaction_count(self._account.address),
+            "gas": 500000,  # Adjust as needed
+            "gasPrice": self._web3.eth.gas_price,
+        })
+        
+        # Sign and send
+        signed_tx = self._web3.eth.account.sign_transaction(tx, self.private_key)
+        tx_hash = self._web3.eth.send_raw_transaction(signed_tx.raw_transaction)
+        
+        print(f"  [CHAIN TX] {contract_name}.{method} -> {tx_hash.hex()[:16]}...")
+        
+        # Wait for receipt
+        receipt = self._web3.eth.wait_for_transaction_receipt(tx_hash, timeout=120)
+        
+        if receipt.status != 1:
+            raise RuntimeError(f"Transaction failed: {tx_hash.hex()}")
+        
+        return receipt
+
+    def _call_view(self, contract_name: str, method: str, args: list = []) -> Any:
+        """Call a view/pure function (no gas cost)."""
+        assert self._web3 is not None
+        
+        if contract_name not in self._contracts:
+            raise ValueError(f"Contract {contract_name} not initialized")
+        
+        contract = self._contracts[contract_name]
+        func = getattr(contract.functions, method)(*args)
+        return func.call()
+
+    def _get_event_arg(self, receipt: Any, contract_name: str, event_name: str, arg_name: str) -> Any:
+        """Extract argument from event in transaction receipt."""
+        assert self._web3 is not None
+        
+        contract = self._contracts[contract_name]
+        event = getattr(contract.events, event_name)
+        logs = event().process_receipt(receipt)
+        
+        if logs:
+            return logs[0].args.get(arg_name)
+        return None
 
     # ---- Agent Registry ----
 
     def register_agent(self, agent_id: str, name: str) -> int:
         """Register an agent. Returns agent ID."""
         if self.live_mode:
-            result = self._call_contract("AgentRegistry", "registerAgent", [name])
-            return result if result else 0
-
-        # Simulation
-        self.agents[agent_id] = {"name": name, "games_played": 0, "wins": 0}
-        print(f"  [CHAIN] Agent registered: {name} (id={agent_id})")
-        return len(self.agents)
+            # Check current count before registration
+            count_before = self._call_view("AgentRegistry", "agentCount")
+            
+            # Register agent
+            receipt = self._send_transaction("AgentRegistry", "registerAgent", [name])
+            
+            # Get new agent ID from event
+            new_id = self._get_event_arg(receipt, "AgentRegistry", "AgentCreated", "agentId")
+            if new_id is None:
+                # Fallback: agentCount should have incremented
+                new_id = count_before + 1
+            
+            self.agent_name_to_id[agent_id] = new_id
+            print(f"  [CHAIN] Agent registered: {name} (on-chain id={new_id})")
+            return new_id
+        
+        # Local tracking (no on-chain)
+        next_id = len(self.agent_name_to_id) + 1
+        self.agent_name_to_id[agent_id] = next_id
+        print(f"  [CHAIN] Agent registered (local): {name} (id={next_id})")
+        return next_id
 
     def update_agent_stats(self, agent_id: str, won: bool):
         """Update agent after game ends."""
+        on_chain_id = self.agent_name_to_id.get(agent_id)
+        if on_chain_id is None:
+            print(f"  [CHAIN] Warning: Agent {agent_id} not registered")
+            return
+        
         if self.live_mode:
-            return self._call_contract("AgentRegistry", "updateAgent", [agent_id, won])
-
-        # Simulation
-        if agent_id in self.agents:
-            self.agents[agent_id]["games_played"] += 1
-            if won:
-                self.agents[agent_id]["wins"] += 1
-            print(f"  [CHAIN] Agent stats updated: {agent_id} won={won}")
+            self._send_transaction("AgentRegistry", "updateAgent", [on_chain_id, won])
+        
+        print(f"  [CHAIN] Agent stats updated: {agent_id} won={won}")
 
     # ---- Game Registry ----
 
     def create_game(self, game_hash: str) -> int:
         """Create a new game on-chain. Returns game ID."""
         if self.live_mode:
-            result = self._call_contract("GameRegistry", "createGame", [game_hash])
-            return result if result else 0
-
-        # Simulation
-        game_id = self.next_game_id
-        self.next_game_id += 1
-        self.games[game_id] = {"hash": game_hash, "status": GameStatus.CREATED}
-        print(f"  [CHAIN] Game created: id={game_id} hash={game_hash[:16]}...")
+            # Convert hex string to bytes32
+            hash_bytes = bytes.fromhex(game_hash) if len(game_hash) == 64 else game_hash.encode()
+            hash_bytes32 = hash_bytes.ljust(32, b'\x00')[:32]
+            
+            count_before = self._call_view("GameRegistry", "gameCount")
+            self._send_transaction("GameRegistry", "createGame", [hash_bytes32])
+            
+            game_id = count_before + 1
+            print(f"  [CHAIN] Game created: id={game_id} hash={game_hash[:16]}...")
+            return game_id
+        
+        # Local: return incrementing ID
+        game_id = len(self.agent_name_to_id) + 1  # Simple counter
+        print(f"  [CHAIN] Game created (local): id={game_id} hash={game_hash[:16]}...")
         return game_id
 
     def start_game(self, game_id: int):
         """Mark game as running."""
         if self.live_mode:
-            return self._call_contract("GameRegistry", "startGame", [game_id])
-
-        # Simulation
-        if game_id in self.games:
-            self.games[game_id]["status"] = GameStatus.RUNNING
-            print(f"  [CHAIN] Game started: id={game_id}")
+            self._send_transaction("GameRegistry", "startGame", [game_id])
+        print(f"  [CHAIN] Game started: id={game_id}")
 
     def finish_game(self, game_id: int):
         """Mark game as finished."""
         if self.live_mode:
-            return self._call_contract("GameRegistry", "finishGame", [game_id])
-
-        # Simulation
-        if game_id in self.games:
-            self.games[game_id]["status"] = GameStatus.FINISHED
-            print(f"  [CHAIN] Game finished: id={game_id}")
+            self._send_transaction("GameRegistry", "finishGame", [game_id])
+        print(f"  [CHAIN] Game finished: id={game_id}")
 
     # ---- Prediction Market ----
 
     def create_market(self, game_id: int, question: str) -> int:
         """Create a prediction market. Returns market ID."""
         if self.live_mode:
-            result = self._call_contract("PredictionMarket", "createMarket", [game_id, question])
-            return result if result else 0
-
-        # Simulation
-        market_id = self.next_market_id
-        self.next_market_id += 1
-        self.markets[market_id] = PredictionMarket(
-            market_id=market_id,
-            game_id=game_id,
-            question=question,
-        )
-        print(f"  [CHAIN] Market created: id={market_id} '{question}'")
-        return market_id
+            count_before = self._call_view("PredictionMarket", "marketCount")
+            
+            receipt = self._send_transaction(
+                "PredictionMarket", "createMarket", [game_id, question]
+            )
+            
+            # Get market ID from event
+            market_id = self._get_event_arg(receipt, "PredictionMarket", "MarketCreated", "marketId")
+            if market_id is None:
+                market_id = count_before + 1
+            
+            print(f"  [CHAIN] Market created: id={market_id} '{question}'")
+            return market_id
+        
+        # Local counter
+        self._local_market_count = getattr(self, "_local_market_count", 0) + 1
+        print(f"  [CHAIN] Market created (local): id={self._local_market_count} '{question}'")
+        return self._local_market_count
 
     def resolve_market(self, market_id: int, outcome: bool):
         """Resolve a prediction market."""
         if self.live_mode:
-            return self._call_contract("PredictionMarket", "resolveMarket", [market_id, outcome])
-
-        # Simulation
-        if market_id in self.markets:
-            self.markets[market_id].resolved = True
-            self.markets[market_id].outcome = outcome
-            q = self.markets[market_id].question
-            print(f"  [CHAIN] Market resolved: id={market_id} '{q}' → {'YES' if outcome else 'NO'}")
+            self._send_transaction("PredictionMarket", "resolveMarket", [market_id, outcome])
+        print(f"  [CHAIN] Market resolved: id={market_id} → {'YES' if outcome else 'NO'}")
 
     # ---- Game Resolver (Batch) ----
 
@@ -265,24 +683,17 @@ class BlockchainConnector:
         Finish game and resolve all associated markets atomically.
         market_outcomes: {market_id: outcome_bool}
         """
+        market_ids = list(market_outcomes.keys())
+        outcomes = list(market_outcomes.values())
+        
         if self.live_mode:
-            market_ids = list(market_outcomes.keys())
-            outcomes = list(market_outcomes.values())
-            return self._call_contract("GameResolver", "resolveGame", [game_id, market_ids, outcomes])
-
-        # Simulation
-        self.finish_game(game_id)
-        for market_id, outcome in market_outcomes.items():
-            self.resolve_market(market_id, outcome)
-
-    # ---- Internal ----
-
-    def _call_contract(self, contract_name: str, method: str, args: list):
-        """Make an actual on-chain call (requires web3.py)."""
-        # This would use web3.py in live mode
-        # For now, just log the call
-        print(f"  [CHAIN TX] {contract_name}.{method}({args})")
-        return None
+            self._send_transaction("GameResolver", "resolveGame", [game_id, market_ids, outcomes])
+            print(f"  [CHAIN] Game {game_id} resolved with {len(market_ids)} markets")
+        else:
+            # Individual resolution for local mode
+            self.finish_game(game_id)
+            for market_id, outcome in market_outcomes.items():
+                self.resolve_market(market_id, outcome)
 
 
 # ---------------------------------------------------------------------------
@@ -322,7 +733,7 @@ class MonadSusChainIntegration:
 
         # Register agents (if not already registered)
         for colour in agent_colours:
-            if colour not in self.connector.agents:
+            if colour not in self.connector.agent_name_to_id:
                 self.connector.register_agent(colour, colour)
 
         # Create game with initial hash (will be updated at end)

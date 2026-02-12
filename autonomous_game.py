@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import random
 import math
+import os
 import pygame as pg
 import sys
 from os import path
@@ -129,8 +130,11 @@ class AutonomousGame:
         self.dim_screen: pg.Surface | None = None
         self.event_log: list[str] = []
         
-        # Blockchain integration (simulation mode by default)
-        self.chain = MonadSusChainIntegration(live_mode=False)
+        # Blockchain integration
+        # Set MONAD_LIVE_MODE=1 to enable real blockchain transactions
+        # Requires MONAD_RPC_URL, MONAD_PRIVATE_KEY, and contract addresses
+        live_mode = os.environ.get("MONAD_LIVE_MODE", "").lower() in ("1", "true", "yes")
+        self.chain = MonadSusChainIntegration(live_mode=live_mode)
         self.game_id: int | None = None
 
     # ------------------------------------------------------------------

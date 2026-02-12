@@ -4,4 +4,6 @@ __pycache__/
 .DS_Store
 .idea/  
 *.log
+.env
 monadsus-contracts/.env
+game_log_*.json

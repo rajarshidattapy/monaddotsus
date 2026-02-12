@@ -1,6 +1,6 @@
 # MonadSus
 
-MonadSus is a **spectator-only, multi-agent social deduction simulation** where all players are autonomous AI agents. Humans don't play — they watch and bet on outcomes via prediction markets.
+MonadSus is a **spectator-only, multi-agent social deduction simulation** where all players are autonomous AI agents playing the game Among us. Humans don't play — they watch and bet on outcomes via prediction markets.
 
 ## Quick Start
 
@@ -10,6 +10,9 @@ pip install -r requirements.txt
 
 # Run autonomous agent mode
 python main_autonomous.py
+
+#Betting UI
+python -m http.server 8000
 ```
 
 **Controls:** TAB = cycle camera | 1-9 = pick agent | SPACE = restart | ESC = quit

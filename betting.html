@@ -1,0 +1,913 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MonadSus - Prediction Markets</title>
+    <!-- Ethers.js CDN - load before using -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.9.0/ethers.umd.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: url('public/bg.gif') center center / cover no-repeat fixed, linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+            min-height: 100vh;
+            color: #fff;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        /* Header */
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px 0;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+            margin-bottom: 30px;
+        }
+
+        .logo {
+            font-size: 28px;
+            font-weight: bold;
+            color: #e94560;
+        }
+
+        .logo span {
+            color: #fff;
+        }
+
+        .connect-btn {
+            background: linear-gradient(135deg, #e94560 0%, #ff6b6b 100%);
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            color: #fff;
+            font-size: 16px;
+            cursor: pointer;
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+
+        .connect-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(233, 69, 96, 0.4);
+        }
+
+        .connect-btn.connected {
+            background: linear-gradient(135deg, #00d9a5 0%, #00b894 100%);
+        }
+
+        .wallet-address {
+            font-size: 14px;
+            color: #aaa;
+            margin-top: 5px;
+        }
+
+        /* Stats Bar */
+        .stats-bar {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .stat-card {
+            background: rgba(255,255,255,0.05);
+            border-radius: 12px;
+            padding: 20px;
+            text-align: center;
+        }
+
+        .stat-value {
+            font-size: 32px;
+            font-weight: bold;
+            color: #e94560;
+        }
+
+        .stat-label {
+            color: #888;
+            margin-top: 5px;
+        }
+
+        /* Markets Grid */
+        .section-title {
+            font-size: 24px;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .section-title::before {
+            content: '';
+            width: 4px;
+            height: 24px;
+            background: #e94560;
+            border-radius: 2px;
+        }
+
+        .markets-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+            gap: 20px;
+        }
+
+        .market-card {
+            background: rgba(255,255,255,0.05);
+            border-radius: 16px;
+            padding: 24px;
+            transition: transform 0.2s, box-shadow 0.2s;
+            border: 1px solid rgba(255,255,255,0.1);
+        }
+
+        .market-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+        }
+
+        .market-card.resolved {
+            opacity: 0.7;
+        }
+
+        .market-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            margin-bottom: 15px;
+        }
+
+        .market-id {
+            background: rgba(233, 69, 96, 0.2);
+            color: #e94560;
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 12px;
+        }
+
+        .market-status {
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 12px;
+        }
+
+        .market-status.open {
+            background: rgba(0, 217, 165, 0.2);
+            color: #00d9a5;
+        }
+
+        .market-status.resolved {
+            background: rgba(255, 255, 255, 0.2);
+            color: #aaa;
+        }
+
+        .market-question {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 20px;
+            line-height: 1.4;
+        }
+
+        .market-pools {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .pool {
+            background: rgba(0,0,0,0.2);
+            border-radius: 10px;
+            padding: 15px;
+            text-align: center;
+        }
+
+        .pool.yes {
+            border: 2px solid #00d9a5;
+        }
+
+        .pool.no {
+            border: 2px solid #e94560;
+        }
+
+        .pool-label {
+            font-size: 12px;
+            color: #888;
+            margin-bottom: 5px;
+        }
+
+        .pool-amount {
+            font-size: 20px;
+            font-weight: bold;
+        }
+
+        .pool.yes .pool-amount {
+            color: #00d9a5;
+        }
+
+        .pool.no .pool-amount {
+            color: #e94560;
+        }
+
+        .pool-odds {
+            font-size: 12px;
+            color: #aaa;
+            margin-top: 5px;
+        }
+
+        /* Betting Form */
+        .bet-form {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 15px;
+        }
+
+        .bet-input {
+            flex: 1;
+            background: rgba(0,0,0,0.3);
+            border: 1px solid rgba(255,255,255,0.2);
+            border-radius: 8px;
+            padding: 12px;
+            color: #fff;
+            font-size: 16px;
+        }
+
+        .bet-input:focus {
+            outline: none;
+            border-color: #e94560;
+        }
+
+        .bet-buttons {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+        }
+
+        .bet-btn {
+            padding: 12px;
+            border: none;
+            border-radius: 8px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.2s, opacity 0.2s;
+        }
+
+        .bet-btn:hover {
+            transform: translateY(-2px);
+        }
+
+        .bet-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        .bet-btn.yes {
+            background: linear-gradient(135deg, #00d9a5 0%, #00b894 100%);
+            color: #fff;
+        }
+
+        .bet-btn.no {
+            background: linear-gradient(135deg, #e94560 0%, #ff6b6b 100%);
+            color: #fff;
+        }
+
+        .claim-btn {
+            width: 100%;
+            padding: 12px;
+            background: linear-gradient(135deg, #f1c40f 0%, #f39c12 100%);
+            border: none;
+            border-radius: 8px;
+            color: #000;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+        }
+
+        .outcome-badge {
+            display: inline-block;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-weight: 600;
+            margin-top: 10px;
+        }
+
+        .outcome-badge.yes {
+            background: rgba(0, 217, 165, 0.2);
+            color: #00d9a5;
+        }
+
+        .outcome-badge.no {
+            background: rgba(233, 69, 96, 0.2);
+            color: #e94560;
+        }
+
+        /* Toast Notifications */
+        .toast-container {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            z-index: 1000;
+        }
+
+        .toast {
+            background: #333;
+            color: #fff;
+            padding: 15px 20px;
+            border-radius: 8px;
+            margin-top: 10px;
+            animation: slideIn 0.3s ease;
+            max-width: 350px;
+        }
+
+        .toast.success {
+            border-left: 4px solid #00d9a5;
+        }
+
+        .toast.error {
+            border-left: 4px solid #e94560;
+        }
+
+        .toast.info {
+            border-left: 4px solid #3498db;
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateX(100%);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        /* Loading Spinner */
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 2px solid rgba(255,255,255,0.3);
+            border-radius: 50%;
+            border-top-color: #fff;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        /* Empty State */
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #888;
+        }
+
+        .empty-state h3 {
+            font-size: 24px;
+            margin-bottom: 10px;
+            color: #fff;
+        }
+
+        /* Refresh Button */
+        .refresh-btn {
+            background: rgba(255,255,255,0.1);
+            border: 1px solid rgba(255,255,255,0.2);
+            padding: 10px 20px;
+            border-radius: 8px;
+            color: #fff;
+            cursor: pointer;
+            margin-left: auto;
+        }
+
+        .refresh-btn:hover {
+            background: rgba(255,255,255,0.2);
+        }
+
+        /* Game Info */
+        .game-info {
+            background: rgba(255,255,255,0.05);
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 30px;
+            display: flex;
+            align-items: center;
+            gap: 20px;
+        }
+
+        .game-badge {
+            background: #e94560;
+            color: #fff;
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-weight: bold;
+        }
+
+        /* Network Badge */
+        .network-badge {
+            background: rgba(147, 51, 234, 0.2);
+            color: #a855f7;
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            margin-left: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div>
+                <div class="logo">Monad<span>Sus</span></div>
+                <span class="network-badge">Monad Testnet</span>
+            </div>
+            <div style="text-align: right;">
+                <button class="connect-btn" id="connectBtn" onclick="connectWallet()">
+                    Connect MetaMask
+                </button>
+                <div class="wallet-address" id="walletAddress"></div>
+            </div>
+        </header>
+
+        <div class="stats-bar">
+            <div class="stat-card">
+                <div class="stat-value" id="totalMarkets">-</div>
+                <div class="stat-label">Total Markets</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="openMarkets">-</div>
+                <div class="stat-label">Open Markets</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="totalVolume">-</div>
+                <div class="stat-label">Total Volume (ETH)</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value" id="userBets">-</div>
+                <div class="stat-label">Your Active Bets</div>
+            </div>
+        </div>
+
+        <div style="display: flex; align-items: center; margin-bottom: 20px;">
+            <h2 class="section-title">Prediction Markets</h2>
+            <button class="refresh-btn" onclick="loadMarkets()">
+                🔄 Refresh
+            </button>
+        </div>
+
+        <div class="markets-grid" id="marketsGrid">
+            <div class="empty-state">
+                <h3>Connect Wallet to View Markets</h3>
+                <p>Connect your MetaMask wallet to view and bet on prediction markets</p>
+            </div>
+        </div>
+    </div>
+
+    <div class="toast-container" id="toastContainer"></div>
+
+    <script>
+        // ============================================================
+        // Contract Configuration
+        // ============================================================
+        
+        const CONFIG = {
+            chainId: '0x279F',  // 10143 in hex (Monad Testnet)
+            chainName: 'Monad Testnet',
+            rpcUrl: 'https://testnet.monad.xyz/rpc',
+            contracts: {
+                predictionMarket: '0x2ff02c750d9a946420827aa1e4ca007016e987c0',
+                gameRegistry: '0x01d574966be161f400eeedee00f5afbd6001b6a0',
+                agentRegistry: '0xc52711c6091635b26f1046b1ac40325260b9c9ec',
+                gameResolver: '0x396123b066a81fb7ba4a616fcc6a4b264b4acb3b'
+            }
+        };
+
+        // Prediction Market ABI (only the functions we need)
+        const PREDICTION_MARKET_ABI = [
+            {
+                "inputs": [],
+                "name": "marketCount",
+                "outputs": [{"name": "", "type": "uint256"}],
+                "stateMutability": "view",
+                "type": "function"
+            },
+            {
+                "inputs": [{"name": "", "type": "uint256"}],
+                "name": "markets",
+                "outputs": [
+                    {"name": "gameId", "type": "uint256"},
+                    {"name": "question", "type": "string"},
+                    {"name": "yesPool", "type": "uint256"},
+                    {"name": "noPool", "type": "uint256"},
+                    {"name": "resolved", "type": "bool"},
+                    {"name": "outcome", "type": "bool"}
+                ],
+                "stateMutability": "view",
+                "type": "function"
+            },
+            {
+                "inputs": [{"name": "marketId", "type": "uint256"}],
+                "name": "betYes",
+                "outputs": [],
+                "stateMutability": "payable",
+                "type": "function"
+            },
+            {
+                "inputs": [{"name": "marketId", "type": "uint256"}],
+                "name": "betNo",
+                "outputs": [],
+                "stateMutability": "payable",
+                "type": "function"
+            },
+            {
+                "inputs": [{"name": "marketId", "type": "uint256"}],
+                "name": "claim",
+                "outputs": [],
+                "stateMutability": "nonpayable",
+                "type": "function"
+            },
+            {
+                "inputs": [{"name": "", "type": "uint256"}, {"name": "", "type": "address"}],
+                "name": "yesBets",
+                "outputs": [{"name": "", "type": "uint256"}],
+                "stateMutability": "view",
+                "type": "function"
+            },
+            {
+                "inputs": [{"name": "", "type": "uint256"}, {"name": "", "type": "address"}],
+                "name": "noBets",
+                "outputs": [{"name": "", "type": "uint256"}],
+                "stateMutability": "view",
+                "type": "function"
+            }
+        ];
+
+        // ============================================================
+        // State
+        // ============================================================
+        
+        let provider = null;
+        let signer = null;
+        let userAddress = null;
+        let contract = null;
+        let markets = [];
+
+        // ============================================================
+        // Wallet Connection
+        // ============================================================
+
+        async function connectWallet() {
+            if (typeof window.ethereum === 'undefined') {
+                showToast('MetaMask not installed! Please install MetaMask.', 'error');
+                return;
+            }
+
+            try {
+                // Request account access
+                const accounts = await window.ethereum.request({ 
+                    method: 'eth_requestAccounts' 
+                });
+                
+                userAddress = accounts[0];
+
+                // Check and switch to Monad network
+                await switchToMonad();
+
+                // Initialize ethers
+                provider = new ethers.BrowserProvider(window.ethereum);
+                signer = await provider.getSigner();
+                
+                // Initialize contract
+                contract = new ethers.Contract(
+                    CONFIG.contracts.predictionMarket,
+                    PREDICTION_MARKET_ABI,
+                    signer
+                );
+
+                // Update UI
+                document.getElementById('connectBtn').textContent = 'Connected';
+                document.getElementById('connectBtn').classList.add('connected');
+                document.getElementById('walletAddress').textContent = 
+                    `${userAddress.slice(0, 6)}...${userAddress.slice(-4)}`;
+
+                showToast('Wallet connected successfully!', 'success');
+                
+                // Load markets
+                await loadMarkets();
+
+            } catch (error) {
+                console.error('Connection error:', error);
+                showToast('Failed to connect wallet: ' + error.message, 'error');
+            }
+        }
+
+        async function switchToMonad() {
+            try {
+                await window.ethereum.request({
+                    method: 'wallet_switchEthereumChain',
+                    params: [{ chainId: CONFIG.chainId }]
+                });
+            } catch (switchError) {
+                // Chain not added, add it
+                if (switchError.code === 4902) {
+                    await window.ethereum.request({
+                        method: 'wallet_addEthereumChain',
+                        params: [{
+                            chainId: CONFIG.chainId,
+                            chainName: CONFIG.chainName,
+                            rpcUrls: [CONFIG.rpcUrl],
+                            nativeCurrency: {
+                                name: 'MON',
+                                symbol: 'MON',
+                                decimals: 18
+                            }
+                        }]
+                    });
+                } else {
+                    throw switchError;
+                }
+            }
+        }
+
+        // ============================================================
+        // Load Markets
+        // ============================================================
+
+        async function loadMarkets() {
+            if (!contract) {
+                showToast('Please connect wallet first', 'info');
+                return;
+            }
+
+            const grid = document.getElementById('marketsGrid');
+            grid.innerHTML = '<div class="empty-state"><div class="loading"></div><p>Loading markets...</p></div>';
+
+            try {
+                const marketCount = await contract.marketCount();
+                console.log('Market count:', marketCount.toString());
+
+                markets = [];
+                let totalVolume = 0n;
+                let openCount = 0;
+                let userBetCount = 0;
+
+                for (let i = 1; i <= marketCount; i++) {
+                    const market = await contract.markets(i);
+                    const userYesBet = await contract.yesBets(i, userAddress);
+                    const userNoBet = await contract.noBets(i, userAddress);
+
+                    markets.push({
+                        id: i,
+                        gameId: market.gameId,
+                        question: market.question,
+                        yesPool: market.yesPool,
+                        noPool: market.noPool,
+                        resolved: market.resolved,
+                        outcome: market.outcome,
+                        userYesBet,
+                        userNoBet
+                    });
+
+                    totalVolume += market.yesPool + market.noPool;
+                    if (!market.resolved) openCount++;
+                    if (userYesBet > 0n || userNoBet > 0n) userBetCount++;
+                }
+
+                // Update stats
+                document.getElementById('totalMarkets').textContent = marketCount.toString();
+                document.getElementById('openMarkets').textContent = openCount;
+                document.getElementById('totalVolume').textContent = ethers.formatEther(totalVolume);
+                document.getElementById('userBets').textContent = userBetCount;
+
+                // Render markets
+                renderMarkets();
+
+            } catch (error) {
+                console.error('Error loading markets:', error);
+                grid.innerHTML = `
+                    <div class="empty-state">
+                        <h3>Error Loading Markets</h3>
+                        <p>${error.message}</p>
+                    </div>
+                `;
+            }
+        }
+
+        function renderMarkets() {
+            const grid = document.getElementById('marketsGrid');
+
+            if (markets.length === 0) {
+                grid.innerHTML = `
+                    <div class="empty-state">
+                        <h3>No Markets Yet</h3>
+                        <p>Markets will appear here when games are started</p>
+                    </div>
+                `;
+                return;
+            }
+
+            grid.innerHTML = markets.map(market => {
+                const totalPool = market.yesPool + market.noPool;
+                const yesOdds = totalPool > 0n ? 
+                    (Number(market.yesPool) / Number(totalPool) * 100).toFixed(1) : '50.0';
+                const noOdds = totalPool > 0n ? 
+                    (Number(market.noPool) / Number(totalPool) * 100).toFixed(1) : '50.0';
+
+                const hasUserBet = market.userYesBet > 0n || market.userNoBet > 0n;
+                const canClaim = market.resolved && hasUserBet && (
+                    (market.outcome && market.userYesBet > 0n) ||
+                    (!market.outcome && market.userNoBet > 0n)
+                );
+
+                return `
+                    <div class="market-card ${market.resolved ? 'resolved' : ''}">
+                        <div class="market-header">
+                            <span class="market-id">Market #${market.id}</span>
+                            <span class="market-status ${market.resolved ? 'resolved' : 'open'}">
+                                ${market.resolved ? 'Resolved' : 'Open'}
+                            </span>
+                        </div>
+                        
+                        <div class="market-question">${market.question}</div>
+                        
+                        <div class="market-pools">
+                            <div class="pool yes">
+                                <div class="pool-label">YES Pool</div>
+                                <div class="pool-amount">${formatEth(market.yesPool)}</div>
+                                <div class="pool-odds">${yesOdds}% odds</div>
+                            </div>
+                            <div class="pool no">
+                                <div class="pool-label">NO Pool</div>
+                                <div class="pool-amount">${formatEth(market.noPool)}</div>
+                                <div class="pool-odds">${noOdds}% odds</div>
+                            </div>
+                        </div>
+
+                        ${!market.resolved ? `
+                            <div class="bet-form">
+                                <input type="number" 
+                                       class="bet-input" 
+                                       id="betAmount${market.id}" 
+                                       placeholder="Amount (ETH)"
+                                       step="0.001"
+                                       min="0.001">
+                            </div>
+                            <div class="bet-buttons">
+                                <button class="bet-btn yes" onclick="placeBet(${market.id}, true)">
+                                    Bet YES
+                                </button>
+                                <button class="bet-btn no" onclick="placeBet(${market.id}, false)">
+                                    Bet NO
+                                </button>
+                            </div>
+                        ` : `
+                            <div class="outcome-badge ${market.outcome ? 'yes' : 'no'}">
+                                Outcome: ${market.outcome ? 'YES' : 'NO'}
+                            </div>
+                            ${canClaim ? `
+                                <button class="claim-btn" onclick="claimReward(${market.id})">
+                                    💰 Claim Reward
+                                </button>
+                            ` : ''}
+                        `}
+
+                        ${hasUserBet ? `
+                            <div style="margin-top: 10px; font-size: 12px; color: #888;">
+                                Your bets: 
+                                ${market.userYesBet > 0n ? `YES: ${formatEth(market.userYesBet)}` : ''}
+                                ${market.userNoBet > 0n ? `NO: ${formatEth(market.userNoBet)}` : ''}
+                            </div>
+                        ` : ''}
+                    </div>
+                `;
+            }).join('');
+        }
+
+        // ============================================================
+        // Betting Functions
+        // ============================================================
+
+        async function placeBet(marketId, isYes) {
+            const amountInput = document.getElementById(`betAmount${marketId}`);
+            const amount = amountInput.value;
+
+            if (!amount || parseFloat(amount) <= 0) {
+                showToast('Please enter a valid bet amount', 'error');
+                return;
+            }
+
+            try {
+                const value = ethers.parseEther(amount);
+                
+                showToast(`Placing ${isYes ? 'YES' : 'NO'} bet of ${amount} ETH...`, 'info');
+
+                let tx;
+                if (isYes) {
+                    tx = await contract.betYes(marketId, { value });
+                } else {
+                    tx = await contract.betNo(marketId, { value });
+                }
+
+                showToast('Transaction submitted, waiting for confirmation...', 'info');
+                await tx.wait();
+
+                showToast(`Bet placed successfully!`, 'success');
+                amountInput.value = '';
+                
+                // Reload markets
+                await loadMarkets();
+
+            } catch (error) {
+                console.error('Bet error:', error);
+                showToast('Bet failed: ' + (error.reason || error.message), 'error');
+            }
+        }
+
+        async function claimReward(marketId) {
+            try {
+                showToast('Claiming reward...', 'info');
+
+                const tx = await contract.claim(marketId);
+                await tx.wait();
+
+                showToast('Reward claimed successfully!', 'success');
+                
+                // Reload markets
+                await loadMarkets();
+
+            } catch (error) {
+                console.error('Claim error:', error);
+                showToast('Claim failed: ' + (error.reason || error.message), 'error');
+            }
+        }
+
+        // ============================================================
+        // Utility Functions
+        // ============================================================
+
+        function formatEth(wei) {
+            return parseFloat(ethers.formatEther(wei)).toFixed(4) + ' ETH';
+        }
+
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toastContainer');
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+            toast.textContent = message;
+            container.appendChild(toast);
+
+            setTimeout(() => {
+                toast.remove();
+            }, 5000);
+        }
+
+        // ============================================================
+        // Event Listeners
+        // ============================================================
+
+        // Handle account changes
+        if (window.ethereum) {
+            window.ethereum.on('accountsChanged', (accounts) => {
+                if (accounts.length === 0) {
+                    userAddress = null;
+                    document.getElementById('connectBtn').textContent = 'Connect MetaMask';
+                    document.getElementById('connectBtn').classList.remove('connected');
+                    document.getElementById('walletAddress').textContent = '';
+                } else {
+                    userAddress = accounts[0];
+                    document.getElementById('walletAddress').textContent = 
+                        `${userAddress.slice(0, 6)}...${userAddress.slice(-4)}`;
+                    loadMarkets();
+                }
+            });
+
+            window.ethereum.on('chainChanged', () => {
+                window.location.reload();
+            });
+        }
+
+        // Auto-connect if previously connected
+        window.addEventListener('load', async () => {
+            if (window.ethereum) {
+                const accounts = await window.ethereum.request({ 
+                    method: 'eth_accounts' 
+                });
+                if (accounts.length > 0) {
+                    connectWallet();
+                }
+            }
+        });
+    </script>
+</body>
+</html>
