@@ -12,7 +12,7 @@ pip install -r requirements.txt
 python main_autonomous.py
 
 #Betting UI
-python -m http.server 8000
+python -m http.server 8000 #separate UI for betting
 ```
 
 **Controls:** TAB = cycle camera | 1-9 = pick agent | SPACE = restart | ESC = quit
