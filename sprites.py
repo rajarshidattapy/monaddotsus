@@ -36,6 +36,7 @@ class Player(pg.sprite.Sprite):
         self.down_img_index = 0
         self.image_dead = None
         self.player_colour = player_colour
+        self.autonomous = False  # Set True for agent-controlled mode
         if self.player_colour == "Red":
             self.player_imgs_left = red_player_imgs_left
             self.player_imgs_right = red_player_imgs_right
@@ -126,6 +127,8 @@ class Player(pg.sprite.Sprite):
     # Check which key or combination of keys are being pressed
     # Control player movement speed
     def get_keys(self):
+        if self.autonomous:
+            return  # Skip keyboard input in autonomous agent mode
         if self.player_islocal == True and self.alive_status == True and self.game.emergency == False:
             self.vel = vec(0, 0)
             keys = pg.key.get_pressed()
