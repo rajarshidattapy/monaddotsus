@@ -26,6 +26,7 @@ from game import Game
 from sprites import Player, Bot
 from settings import *
 from agent_controller import SimpleAgent
+from blockchain import MonadSusChainIntegration
 
 
 # ---------------------------------------------------------------------------
@@ -127,6 +128,10 @@ class AutonomousGame:
         self.hud_font_lg: pg.font.Font | None = None
         self.dim_screen: pg.Surface | None = None
         self.event_log: list[str] = []
+        
+        # Blockchain integration (simulation mode by default)
+        self.chain = MonadSusChainIntegration(live_mode=False)
+        self.game_id: int | None = None
 
     # ------------------------------------------------------------------
     # Setup
@@ -197,6 +202,9 @@ class AutonomousGame:
         pg.mixer.music.play(-1)
         pg.mixer.music.set_volume(0.5)
 
+        # Initialize blockchain integration
+        self.game_id = self.chain.on_game_start(self.all_colours, self.imposter_colour)
+
         self._log(f"Match started — {len(self.all_colours)} agents")
         self._log(f"Imposter: {self.imposter_colour}")
 
@@ -222,8 +230,8 @@ class AutonomousGame:
         """Log a dialogue event (FR-6 from Dialogue PRD)."""
         # Console output
         print(f"  [{self.tick // 60:>3}s] [{agent_id}]: {message}")
-        # Structured event (could be extended to file/JSON logging)
-        # Format: {"t": timestamp, "type": "SPEAK", "agent_id": agent_id, "message": message}
+        # Blockchain event log
+        self.chain.logger.log_speak(agent_id, message)
 
     def alive_colours(self):
         return [c for c in self.all_colours if self.entities[c].alive_status]
@@ -340,6 +348,7 @@ class AutonomousGame:
             pass
 
         self._log(f"{killer_c} killed {victim_c}!")
+        self.chain.logger.log_kill(killer_c, victim_c)
         return True
 
     # ------------------------------------------------------------------
@@ -376,6 +385,7 @@ class AutonomousGame:
             pass
 
         self._log(f"Meeting called by {trigger_colour}!")
+        self.chain.logger.log_meeting(trigger_colour)
 
     def _process_votes(self):
         """Return colour to eject (or None for skip / tie)."""
@@ -402,6 +412,10 @@ class AutonomousGame:
             f"{v}->{'skip' if t is None else t}" for v, t in self.votes.items()
         )
         self._log(f"Votes: {summary}")
+        
+        # Log votes to blockchain
+        for voter, target in self.votes.items():
+            self.chain.logger.log_vote(voter, target)
 
         if ejected:
             self.eject_active = True
@@ -414,6 +428,7 @@ class AutonomousGame:
                 f"{ejected} was ejected! "
                 + ("They were the Imposter!" if imp else "They were NOT the Imposter.")
             )
+            self.chain.logger.log_eject(ejected, imp)
         else:
             self._log("No one was ejected (tie or skip).")
 
@@ -458,13 +473,22 @@ class AutonomousGame:
             self.game_over = True
             self.winner = "CREW"
             self._log("CREW WINS — the imposter was eliminated!")
+            self._settle_blockchain()
             return True
         if len(imps) >= len(crew):
             self.game_over = True
             self.winner = "IMPOSTER"
             self._log("IMPOSTER WINS — crew is outnumbered!")
+            self._settle_blockchain()
             return True
         return False
+
+    def _settle_blockchain(self):
+        """Settle all prediction markets and update agent stats on-chain."""
+        assert self.winner is not None
+        assert self.imposter_colour is not None
+        alive = self.alive_colours()
+        self.chain.on_game_end(self.winner, self.imposter_colour, alive)
 
     # ------------------------------------------------------------------
     # Event handling (spectator controls only)

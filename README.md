@@ -1,341 +1,201 @@
 # MonadSus
 
-Monadsus is a spectator-only, multi-agent social deduction simulation where:
+MonadSus is a **spectator-only, multi-agent social deduction simulation** where all players are autonomous AI agents. Humans don't play — they watch and bet on outcomes via prediction markets.
 
+## Quick Start
 
-## Start: python main_autonomous.py
+```bash
+# Install dependencies
+pip install -r requirements.txt
 
-## Deployment link: openclaw-main-production-3889.up.railway.app
-
-
-* All players are **autonomous, verified AI agents** (ERC-8004 / OpenClaw)
-* Agents must **coordinate, deceive, accuse, and vote** via natural language
-* Humans **cannot play** — they only observe
-* While the game runs, spectators trade **prediction claims** on agent behavior
-* Markets close when the game ends and settle deterministically
-
-This is **not a game clone**.
-This is an **adversarial multi-agent benchmark with belief markets**.
-
----
-
-## 2. Goals & Non-Goals
-
-### Goals
-
-* Study deception, persuasion, and coalition formation in LLM agents
-* Create repeatable, deterministic agent-only matches
-* Aggregate human belief signals via prediction markets
-* Generate measurable agent performance metrics over time
-
-### Non-Goals
-
-* Real-time on-chain gameplay
-* Player-controlled agents
-* Monetization-first tokenomics
-* High-fidelity graphics (existing Pygame UI is sufficient)
-
----
-
-## 3. System Architecture (High-Level)
-
-```
-┌────────────────────────┐
-│  Spectator Frontend    │  (read-only)
-│  - Watch match         │
-│  - Trade claims        │
-└───────────▲────────────┘
-            │
-┌───────────┴────────────┐
-│ Prediction Market      │  (on-chain, async)
-│ - Claim minting        │
-│ - Trading              │
-│ - Settlement           │
-└───────────▲────────────┘
-            │
-┌───────────┴────────────┐
-│ Event Stream           │  (off-chain, signed)
-│ - Agent messages       │
-│ - Votes                │
-│ - Deaths               │
-└───────────▲────────────┘
-            │
-┌───────────┴────────────┐
-│ Game Engine            │  (authoritative)
-│ - State machine        │
-│ - Tasks / kills        │
-│ - Voting               │
-└───────────▲────────────┘
-            │
-┌───────────┴────────────┐
-│ Agent Runtime Pool     │
-│ - Verified agents      │
-│ - LLM + memory         │
-│ - Action selection     │
-└────────────────────────┘
+# Run autonomous agent mode
+python main_autonomous.py
 ```
 
+**Controls:** TAB = cycle camera | 1-9 = pick agent | SPACE = restart | ESC = quit
+
 ---
 
-## 4. Agent Model
+## Current Implementation Status
 
-### 4.1 Agent Identity
+### ✅ Phase 1 — Autonomous Agent Gameplay (Complete)
 
-Each agent is defined by:
+| Feature | Status |
+|---------|--------|
+| Agent Controller Interface | ✅ `agent_controller.py` |
+| Random Walk Movement | ✅ Stuck detection included |
+| Imposter Kill Logic | ✅ Range check, cooldown, body spawn |
+| Body Detection → Meeting | ✅ Crew detects corpses |
+| Meeting Dialogue System | ✅ Template-based accusations/defenses |
+| Voting & Ejection | ✅ Majority vote, ties skip |
+| Win Conditions | ✅ Crew wins if imposter ejected, imposter wins if outnumbered |
+| Dead Body Sprites | ✅ Proper death rendering |
+
+### ✅ Phase 2 — Agent Dialogue (Complete)
+
+| Feature | Status |
+|---------|--------|
+| SPEAK action type | ✅ |
+| Dialogue templates (Accusation, Defense, Uncertainty, Observation) | ✅ |
+| Role-aware dialogue (Imposter deflection) | ✅ |
+| Meeting phases: Alert → Dialogue → Voting | ✅ |
+| Turn-based speaking (shuffled order) | ✅ |
+| Console logging of all dialogue | ✅ |
+
+### ✅ Phase 3 — Blockchain Integration (Complete)
+
+| Feature | Status |
+|---------|--------|
+| Event logging system | ✅ `blockchain.py` |
+| Deterministic game hash | ✅ SHA-256 of all events |
+| Agent Registry connector | ✅ Track games played, wins |
+| Game Registry connector | ✅ Register/start/finish games |
+| Prediction Market connector | ✅ Create/resolve markets |
+| Batch settlement via GameResolver | ✅ |
+| JSON event log export | ✅ `game_log_{id}.json` |
+
+---
+
+## Architecture
 
 ```
-AgentID
-WalletAddress
-VerificationProof (ERC-8004)
-PolicyHash
-ReputationScore
-```
-
-Only verified agents can join a lobby.
-
----
-
-### 4.2 Agent Capabilities (Strictly Limited)
-
-Agents can only perform these actions:
-
-* `MOVE(direction)`
-* `SPEAK(message)`
-* `VOTE(agent_id)`
-* `KILL(agent_id)` (imposter only)
-* `SABOTAGE(type)` (imposter only)
-* `DO_TASK(task_id)`
-
-Agents **cannot**:
-
-* See market prices
-* See other agents’ internal state
-* Modify game state directly
-* Access wallets or tokens
-
----
-
-### 4.3 Agent Loop (Per Tick)
-
-```
-observe(game_state_slice)
-→ update_memory()
-→ reason()
-→ choose_action()
-→ submit_action()
-```
-
-All actions are validated by the game engine.
-
----
-
-## 5. Game Engine Modifications (From Your Clone)
-
-### 5.1 Required Refactors
-
-From your existing codebase:
-
-Split `game.py` into:
-
-* `GameState`
-* `VoteManager`
-* `TaskManager`
-* `SabotageManager`
-* `DialogueManager`
-* `EventLogger`
-
-This is **mandatory**. Agent control requires clean boundaries.
-
----
-
-### 5.2 Determinism Rules
-
-* Fixed tick rate
-* No random events without seeded RNG
-* Every game produces a reproducible final state hash
-
-This is required for market settlement trust.
-
----
-
-## 6. Communication System
-
-### 6.1 Agent Dialogue
-
-* Text-only messages
-* Turn-based during meetings
-* Rate-limited (no spam)
-
-Each message is logged as:
-
-```
-(timestamp, agent_id, message_hash)
+┌────────────────────────────────────────────────────────────┐
+│                    SPECTATOR (Human)                       │
+│              Watch match, trade predictions                │
+└────────────────────────▲───────────────────────────────────┘
+                         │ read-only
+┌────────────────────────┴───────────────────────────────────┐
+│                   BLOCKCHAIN MODULE                        │
+│  blockchain.py                                             │
+│  - EventLogger: logs kills, meetings, dialogue, votes     │
+│  - BlockchainConnector: simulation / Monad testnet        │
+│  - MonadSusChainIntegration: high-level game hooks        │
+└────────────────────────▲───────────────────────────────────┘
+                         │ events
+┌────────────────────────┴───────────────────────────────────┐
+│                   GAME ENGINE                              │
+│  autonomous_game.py                                        │
+│  - AutonomousGame: main loop, phases, rendering           │
+│  - Meeting phases: ALERT → DIALOGUE → VOTING              │
+│  - Win conditions, ejection, body detection               │
+└────────────────────────▲───────────────────────────────────┘
+                         │ actions
+┌────────────────────────┴───────────────────────────────────┐
+│                   AGENT CONTROLLERS                        │
+│  agent_controller.py                                       │
+│  - AgentController: base class                            │
+│  - SimpleAgent: random walk, kill, speak, vote            │
+│  - Dialogue templates: accusation, defense, uncertainty   │
+└────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-### 6.2 Event Stream (Read-Only)
+## Smart Contracts (Monad Testnet)
 
-Published to spectators:
+Located in `monadsus-contracts/src/`:
 
-* Messages
-* Votes
-* Kills
-* Ejections
-* Task completions (aggregated, not per-agent)
+| Contract | Purpose |
+|----------|---------|
+| `AgentRegistry.sol` | Track agent names, games played, wins |
+| `GameRegistry.sol` | Register games with hash, manage lifecycle |
+| `PredictionMarket.sol` | YES/NO betting pools, payout claims |
+| `GameResolver.sol` | Batch-resolve markets when game ends |
 
-No private info is ever leaked.
+### Contract Deployment
 
----
-
-## 7. Prediction Market Design
-
-### 7.1 What Is Traded
-
-**Claim tokens**, not agents.
-
-Each claim has:
-
-* YES token
-* NO token
-
-Examples:
-
-* `AGENT_4_IS_IMPOSTER`
-* `AGENT_2_SURVIVES_ROUND_3`
-* `CREW_WINS_MATCH`
-
----
-
-### 7.2 Market Lifecycle
-
-1. **Game Start**
-
-   * Markets auto-open
-   * Initial prices = neutral (e.g. 0.5)
-
-2. **During Game**
-
-   * Spectators trade freely
-   * Prices react to agent behavior
-
-3. **Game End**
-
-   * Markets freeze instantly
-   * Final state hash published
-
-4. **Settlement**
-
-   * Claims resolved deterministically
-   * Winners receive payout
-
----
-
-### 7.3 Key Constraints
-
-* Agents never see markets
-* Markets never influence gameplay
-* Max stake per wallet enforced
-* All contracts open-source
-
----
-
-## 8. Settlement Logic
-
-Settlement inputs:
-
-* Final game state hash
-* Deterministic outcome rules
-
-Example:
-
-```
-if imposter_id == Agent_4:
-  resolve(AGENT_4_IS_IMPOSTER, YES)
-else:
-  resolve(AGENT_4_IS_IMPOSTER, NO)
+```bash
+cd monadsus-contracts
+forge build
+forge script script/Deploy.s.sol --rpc-url <MONAD_RPC> --broadcast
 ```
 
-No oracles. No voting. No admin keys.
+---
+
+## File Structure
+
+```
+monaddotsus/
+├── main_autonomous.py      # Entry point for autonomous mode
+├── autonomous_game.py      # Game engine (850+ lines)
+├── agent_controller.py     # Agent interface + SimpleAgent
+├── blockchain.py           # On-chain integration module
+├── game.py                 # Original game (for reference)
+├── sprites.py              # Player/Bot sprites (modified for autonomous flag)
+├── settings.py             # Config, sprite loading
+├── monadsus-contracts/     # Solidity contracts (Foundry)
+│   └── src/
+│       ├── AgentRegistry.sol
+│       ├── GameRegistry.sol
+│       ├── GameResolver.sol
+│       └── PredictionMarket.sol
+└── Assets/                 # Sprites, sounds, maps
+```
 
 ---
 
-## 9. Reputation & Metrics (Core Research Value)
+## Prediction Markets
 
-After each game, compute:
+When a game starts, these markets are created:
 
-### Agent Metrics
+| Market | Resolution |
+|--------|------------|
+| `Will the Crew win?` | YES if crew wins |
+| `Is {Agent} the Imposter?` | YES if agent is imposter |
+| `Will {Agent} survive?` | YES if agent alive at end |
 
-* Win rate (by role)
-* Survival duration
-* Vote accuracy
-* Deception success (market belief vs truth)
-* Speech impact (price movement after messages)
-
-### Market Metrics
-
-* Crowd accuracy
-* Price convergence speed
-* Volatility during meetings
-
-These metrics update agent reputation **off-chain**.
+All markets settle deterministically from the final game state hash.
 
 ---
 
-## 10. Security Model
+## Event Log Format
 
-### Threats Addressed
+Every game exports a JSON log:
 
-* Agent cheating → server authoritative
-* Market manipulation → stake caps
-* Insider knowledge → no market → agent feedback
-* Replay attacks → signed game hashes
-
-### Explicitly Not Addressed
-
-* Sophisticated MEV
-* Nation-state adversaries
-* Fully trustless LLM execution
-
-That’s fine.
-
----
-
-## 11. Build Phases (Concrete)
-
-### Phase 1 – Agent-Only Gameplay
-
-* Replace human input with agents
-* Deterministic matches
-* Logged events
-
-### Phase 2 – Spectator View
-
-* Read-only UI
-* Dialogue playback
-* Timeline controls
-
-### Phase 3 – Prediction Markets
-
-* Claim contracts
-* Trade UI
-* Settlement
-
-### Phase 4 – Metrics & Reputation
-
-* Agent dashboards
-* Longitudinal stats
+```json
+[
+  {"t": 0.0, "type": "GAME_START", "agent_id": null, "data": {}},
+  {"t": 15.2, "type": "KILL", "agent_id": "Green", "data": {"victim": "Blue"}},
+  {"t": 30.5, "type": "MEETING_START", "agent_id": "Red", "data": {}},
+  {"t": 31.0, "type": "SPEAK", "agent_id": "Red", "data": {"message": "I think Green is suspicious."}},
+  {"t": 32.0, "type": "VOTE", "agent_id": "Red", "data": {"target": "Green"}},
+  {"t": 35.0, "type": "EJECT", "agent_id": "Green", "data": {"was_imposter": true}},
+  {"t": 35.1, "type": "GAME_END", "agent_id": null, "data": {"winner": "CREW", "imposter": "Green"}}
+]
+```
 
 ---
 
-## 12. What Makes This Defensible
+## Next Steps (Roadmap)
 
-* Agents are verified
-* Humans are spectators only
-* Markets aggregate belief, not control outcomes
-* Deterministic settlement
-* Reusable benchmark across models
+### Phase 4 — LLM Agents
+- Replace `SimpleAgent` with GPT/Claude-powered reasoning
+- Memory system for tracking observations
+- Strategic deception and persuasion
 
-This is **AI systems research wearing a game skin**.
+### Phase 5 — Spectator Frontend
+- Web UI for watching matches
+- Real-time event stream
+- Market trading interface
+
+### Phase 6 — Live Blockchain Mode
+- Deploy contracts to Monad mainnet
+- Web3 wallet integration
+- Real prediction market trading
 
 ---
+
+## Why This Matters
+
+This is **AI systems research wearing a game skin**:
+
+- Study deception, persuasion, and coalition formation in LLM agents
+- Aggregate human belief signals via prediction markets
+- Generate measurable agent performance metrics over time
+- Deterministic, reproducible matches for benchmarking
+
+---
+
+## License
+
+MIT
