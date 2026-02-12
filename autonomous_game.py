@@ -14,6 +14,7 @@ Implements all Functional Requirements from AGENT.md:
   FR-6: Voting logic
   FR-7: Game end conditions
 """
+from __future__ import annotations
 
 import random
 import math
@@ -71,6 +72,7 @@ class AutonomousGame:
     KILL_COOLDOWN         = 600     # ticks (10 s @ 60 fps)
     MEETING_COOLDOWN      = 900     # ticks (15 s)
     MEETING_ALERT_TICKS   = 90      # ticks (1.5 s) — "EMERGENCY" splash
+    MEETING_DIALOGUE_TICKS = 360    # ticks (6 s) — dialogue window
     MEETING_VOTE_TICKS    = 600     # ticks (10 s) — vote window
     EJECT_TICKS           = 180     # ticks (3 s) — ejection screen
     MAX_GAME_TICKS        = 36000   # ticks (10 min)
@@ -94,10 +96,17 @@ class AutonomousGame:
 
         # Meeting state
         self.meeting_active = False
-        self.meeting_phase = 0    # 0=alert, 1=vote
+        self.meeting_phase = 0    # 0=alert, 1=dialogue, 2=vote
         self.meeting_timer = 0
         self.meeting_trigger_colour = None
         self.votes = {}
+        
+        # Dialogue state (FR-1 to FR-6 from Dialogue PRD)
+        self.dialogue_order: list[str] = []        # shuffled order of speakers
+        self.dialogue_messages: list[tuple[str, str]] = []  # [(colour, message), ...]
+        self.spoken_agents: set[str] = set()       # agents who have spoken
+        self.current_speaker_idx = 0               # index into dialogue_order
+        self.dialogue_ticks_per_agent = 60         # ticks to display each message
 
         # Eject state
         self.eject_active = False
@@ -112,12 +121,12 @@ class AutonomousGame:
         # Camera
         self.camera_target_idx = 0
 
-        # HUD
-        self.hud_font = None
-        self.hud_font_sm = None
-        self.hud_font_lg = None
-        self.dim_screen = None
-        self.event_log = []
+        # HUD (assigned in setup())
+        self.hud_font: pg.font.Font | None = None
+        self.hud_font_sm: pg.font.Font | None = None
+        self.hud_font_lg: pg.font.Font | None = None
+        self.dim_screen: pg.Surface | None = None
+        self.event_log: list[str] = []
 
     # ------------------------------------------------------------------
     # Setup
@@ -125,8 +134,9 @@ class AutonomousGame:
 
     def setup(self):
         """Initialise game world and assign agents."""
-        self.game.player_colour = "Red"
-        self.game.gamemode = "Freeplay"
+        # Set attributes dynamically (Game class sets these externally)
+        setattr(self.game, 'player_colour', "Red")
+        setattr(self.game, 'gamemode', "Freeplay")
         self.game.new()                      # builds map, obstacles, bots
 
         # Create camera-target player, mark autonomous
@@ -140,8 +150,9 @@ class AutonomousGame:
         self.game.imposter_among_us_status = False
 
         # Remove bot whose colour matches the player entity
+        player_colour = getattr(self.game, 'player_colour', 'Red')
         for b in list(self.game.bots):
-            if b.bot_colour == self.game.player_colour:
+            if b.bot_colour == player_colour:
                 b.kill()
                 break
 
@@ -207,6 +218,13 @@ class AutonomousGame:
             self.event_log.pop(0)
         print(f"  [{self.tick // 60:>3}s] {msg}")
 
+    def _log_dialogue(self, agent_id, message):
+        """Log a dialogue event (FR-6 from Dialogue PRD)."""
+        # Console output
+        print(f"  [{self.tick // 60:>3}s] [{agent_id}]: {message}")
+        # Structured event (could be extended to file/JSON logging)
+        # Format: {"t": timestamp, "type": "SPEAK", "agent_id": agent_id, "message": message}
+
     def alive_colours(self):
         return [c for c in self.all_colours if self.entities[c].alive_status]
 
@@ -220,19 +238,30 @@ class AutonomousGame:
     def _observation(self, colour):
         ent = self.entities[colour]
         alive = self.alive_colours()
+        dead = [c for c in self.all_colours if not self.entities[c].alive_status]
         nearby = []
         for oc in alive:
             if oc == colour:
                 continue
             if self._dist(ent, self.entities[oc]) <= self.KILL_RANGE:
                 nearby.append(oc)
+        
+        # Determine meeting phase name for agents
+        phase_name = "none"
+        if self.meeting_active:
+            if self.meeting_phase == 1:
+                phase_name = "dialogue"
+            elif self.meeting_phase == 2:
+                phase_name = "voting"
 
         return {
             "position":       (ent.pos.x, ent.pos.y),
             "nearby_agents":  nearby,
             "alive_agents":   [c for c in alive if c != colour],
+            "dead_agents":    dead,
             "role":           self.agents[colour].role,
             "meeting_active": self.meeting_active,
+            "meeting_phase":  phase_name,
             "can_kill":       (
                 self.agents[colour].role == "IMPOSTER"
                 and self.kill_cooldown <= 0
@@ -289,9 +318,18 @@ class AutonomousGame:
 
         # Kill succeeds
         victim.alive_status = False
-        dead_img = self.color_sprites.get(victim_c, {}).get("dead")
-        if dead_img is not None:
-            victim.image = dead_img
+        
+        # Use the entity's own dead image if available
+        # Player class uses `image_dead`, Bot class uses `dead_player_img`
+        if hasattr(victim, 'image_dead') and victim.image_dead is not None:
+            victim.image = victim.image_dead
+        elif hasattr(victim, 'dead_player_img') and victim.dead_player_img is not None:
+            victim.image = victim.dead_player_img
+        else:
+            dead_img = self.color_sprites.get(victim_c, {}).get("dead")
+            if dead_img is not None:
+                victim.image = dead_img.convert_alpha()
+        
         victim.vel = vec(0, 0)
         self.dead_bodies.append((victim.pos.x, victim.pos.y, victim_c))
         self.kill_cooldown = self.KILL_COOLDOWN
@@ -316,6 +354,14 @@ class AutonomousGame:
         self.meeting_timer = 0
         self.meeting_trigger_colour = trigger_colour
         self.votes = {}
+        
+        # Initialize dialogue state (FR-4: shuffled order)
+        self.dialogue_order = self.alive_colours()
+        random.shuffle(self.dialogue_order)
+        self.dialogue_messages = []
+        self.spoken_agents = set()
+        self.current_speaker_idx = 0
+        
         for agent in self.agents.values():
             agent.reset_vote()
         for c in self.all_colours:
@@ -461,6 +507,7 @@ class AutonomousGame:
         return self.entities[self.all_colours[idx]]
 
     def _draw(self):
+        assert self.hud_font_sm  # Initialized in setup()
         screen = self.game.screen
         cam = self.game.camera
 
@@ -503,6 +550,7 @@ class AutonomousGame:
     # ---- HUD ----
 
     def _draw_hud(self, screen):
+        assert self.hud_font and self.hud_font_sm and self.hud_font_lg  # Initialized in setup()
         alive = self.alive_colours()
 
         # Status panel (top-left)
@@ -557,6 +605,7 @@ class AutonomousGame:
     # ---- Meeting ----
 
     def _draw_meeting(self, screen):
+        assert self.hud_font and self.hud_font_sm and self.hud_font_lg and self.dim_screen
         screen.blit(self.dim_screen, (0, 0))
 
         if self.meeting_phase == 0:
@@ -565,7 +614,39 @@ class AutonomousGame:
             screen.blit(t1, t1.get_rect(center=(WIDTH // 2, HEIGHT // 3)))
             t2 = self.hud_font.render(f"Called by {self.meeting_trigger_colour}", True, WHITE)
             screen.blit(t2, t2.get_rect(center=(WIDTH // 2, HEIGHT // 3 + 55)))
-        else:
+        
+        elif self.meeting_phase == 1:
+            # Dialogue phase (FR-5: Dialogue Display)
+            t1 = self.hud_font_lg.render("DISCUSSION", True, (100, 200, 255))
+            screen.blit(t1, t1.get_rect(center=(WIDTH // 2, 45)))
+            
+            remaining = max(0, (self.MEETING_DIALOGUE_TICKS - self.meeting_timer) // 60)
+            t2 = self.hud_font.render(f"Time: {remaining}s", True, (255, 200, 50))
+            screen.blit(t2, t2.get_rect(center=(WIDTH // 2, 85)))
+            
+            # Show dialogue messages (scrolling chat log)
+            y = 120
+            max_display = 8  # Show last N messages
+            messages_to_show = self.dialogue_messages[-max_display:]
+            for agent_c, msg in messages_to_show:
+                clr = COLOR_MAP.get(agent_c, WHITE)
+                # Agent name
+                name_surf = self.hud_font.render(f"[{agent_c}]:", True, clr)
+                screen.blit(name_surf, (60, y))
+                # Message text (truncate if too long)
+                display_msg = msg if len(msg) < 45 else msg[:42] + "..."
+                msg_surf = self.hud_font_sm.render(display_msg, True, (220, 220, 220))
+                screen.blit(msg_surf, (180, y + 4))
+                y += 32
+            
+            # Show who hasn't spoken yet
+            not_spoken = [c for c in self.alive_colours() if c not in self.spoken_agents]
+            if not_spoken:
+                waiting_text = f"Waiting: {', '.join(not_spoken[:4])}{'...' if len(not_spoken) > 4 else ''}"
+                wait_surf = self.hud_font_sm.render(waiting_text, True, (150, 150, 150))
+                screen.blit(wait_surf, (60, HEIGHT - 80))
+        
+        elif self.meeting_phase == 2:
             # Vote screen
             t1 = self.hud_font_lg.render("VOTING", True, WHITE)
             screen.blit(t1, t1.get_rect(center=(WIDTH // 2, 55)))
@@ -592,6 +673,7 @@ class AutonomousGame:
     # ---- Eject ----
 
     def _draw_eject(self, screen):
+        assert self.hud_font and self.hud_font_lg and self.dim_screen
         screen.blit(self.dim_screen, (0, 0))
         imp = self.agents[self.ejected_colour].role == "IMPOSTER"
         t1 = self.hud_font_lg.render(f"{self.ejected_colour} was ejected.", True, WHITE)
@@ -605,6 +687,7 @@ class AutonomousGame:
     # ---- Game Over ----
 
     def _draw_game_over(self, screen):
+        assert self.hud_font and self.hud_font_sm and self.hud_font_lg and self.dim_screen
         screen.blit(self.dim_screen, (0, 0))
         if self.winner == "CREW":
             t1 = self.hud_font_lg.render("CREW WINS!", True, (60, 200, 255))
@@ -669,7 +752,31 @@ class AutonomousGame:
                     if self.meeting_timer >= self.MEETING_ALERT_TICKS:
                         self.meeting_phase = 1
                         self.meeting_timer = 0
+                        self._log("Dialogue phase started...")
+                
                 elif self.meeting_phase == 1:
+                    # Dialogue phase: agents speak in order (FR-1, FR-4)
+                    for c in self.dialogue_order:
+                        if c not in self.spoken_agents and self.entities[c].alive_status:
+                            obs = self._observation(c)
+                            act = self.agents[c].get_action(obs)
+                            if act["type"] == "SPEAK":
+                                message = act.get("data", "...")
+                                self.dialogue_messages.append((c, message))
+                                self.spoken_agents.add(c)
+                                # Log dialogue event (FR-6)
+                                self._log_dialogue(c, message)
+                                break  # One speaker per tick for turn-taking
+                    
+                    # Transition to voting when all have spoken or timeout
+                    alive = self.alive_colours()
+                    all_spoken = all(c in self.spoken_agents for c in alive)
+                    if all_spoken or self.meeting_timer >= self.MEETING_DIALOGUE_TICKS:
+                        self.meeting_phase = 2
+                        self.meeting_timer = 0
+                        self._log("Voting phase started...")
+                
+                elif self.meeting_phase == 2:
                     # Collect votes
                     for c in self.alive_colours():
                         if c not in self.votes:

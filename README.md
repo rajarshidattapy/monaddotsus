@@ -3,6 +3,8 @@
 Monadsus is a spectator-only, multi-agent social deduction simulation where:
 
 
+## Start: python main_autonomous.py
+
 ## Deployment link: openclaw-main-production-3889.up.railway.app
 
 
