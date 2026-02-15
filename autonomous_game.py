@@ -79,6 +79,10 @@ class AutonomousGame:
     EJECT_TICKS           = 180     # ticks (3 s) — ejection screen
     MAX_GAME_TICKS        = 36000   # ticks (10 min)
     AUTO_MEETING_INTERVAL = 7200    # ticks (2 min) — fallback meeting
+    
+    # Pre-game trading period
+    PRE_GAME_TRADING_DURATION = 300  # 5 minutes in seconds
+    PRE_GAME_TRADING_TICKS = PRE_GAME_TRADING_DURATION * 60  # Convert to ticks @ 60 FPS
 
     def __init__(self):
         self.color_sprites = build_color_sprites()
@@ -118,6 +122,10 @@ class AutonomousGame:
         # Outcome
         self.tick = 0
         self.game_over = False
+        
+        # Pre-game trading state
+        self.pre_game_trading = False
+        self.pre_game_timer = 0
         self.winner = None        # "CREW" | "IMPOSTER"
 
         # Camera
@@ -186,10 +194,30 @@ class AutonomousGame:
         # Pick random imposter
         self.imposter_colour = random.choice(self.all_colours)
 
-        # Create agent controllers
+        # Create agents
         for colour in self.all_colours:
             role = "IMPOSTER" if colour == self.imposter_colour else "CREW"
-            self.agents[colour] = SimpleAgent(agent_id=colour, role=role)
+            
+            # Choose agent type based on config
+            agent_mode = os.environ.get("AGENT_MODE", "simple")
+            
+            if agent_mode == "openclaw":
+                try:
+                    from openclaw_agent import OpenClawAgentController
+                    # Assign varied personalities for diversity
+                    personality = self._assign_personality(colour, role)
+                    self.agents[colour] = OpenClawAgentController(
+                        agent_id=colour,
+                        role=role,
+                        personality_type=personality
+                    )
+                except ImportError as e:
+                    print(f"  [WARN] OpenClaw not available: {e}, using SimpleAgent")
+                    self.agents[colour] = SimpleAgent(agent_id=colour, role=role)
+            else:
+                # Fallback to simple random agent
+                self.agents[colour] = SimpleAgent(agent_id=colour, role=role)
+            
             self.entities[colour].imposter = (role == "IMPOSTER")
 
         # Camera starts following the imposter
@@ -223,6 +251,13 @@ class AutonomousGame:
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
+    
+    def _assign_personality(self, colour: str, role: str) -> str:
+        """Assign diverse personalities to agents for varied gameplay."""
+        if role == "IMPOSTER":
+            return random.choice(["aggressive", "subtle"])
+        else:  # CREW
+            return random.choice(["detective", "follower", "balanced"])
 
     def _log(self, msg):
         self.event_log.append(msg)
@@ -744,12 +779,35 @@ class AutonomousGame:
         self.setup()
         clock = pg.time.Clock()
         victory_played = False
+        
+        # Start pre-game trading period
+        self.pre_game_trading = True
+        self.pre_game_timer = 0
+        self.chain.on_pre_game_trading_start()
+        print("\n" + "="*60)
+        print("PRE-GAME TRADING PERIOD: 5 MINUTES")
+        print("Spectators can now buy agent tokens!")
+        print("="*60 + "\n")
 
         while True:
             dt = clock.tick(FPS) / 1000.0
             self.game.dt = dt
 
             self._handle_events()
+            
+            # ---- PRE-GAME TRADING COUNTDOWN ----
+            if self.pre_game_trading:
+                self.pre_game_timer += 1
+                self._draw_pre_game_screen()
+                
+                if self.pre_game_timer >= self.PRE_GAME_TRADING_TICKS:
+                    self.pre_game_trading = False
+                    self.chain.on_game_actually_start()
+                    print("\n" + "="*60)
+                    print("TRADING LOCKED - GAME STARTING!")
+                    print("="*60 + "\n")
+                
+                continue
 
             # ---- GAME OVER: wait for restart ----
             if self.game_over:
@@ -873,3 +931,52 @@ class AutonomousGame:
                 self.game_over = True
                 self.winner = "CREW"
                 self._log("Time limit reached — crew wins by default.")
+
+    def _draw_pre_game_screen(self):
+        """Display countdown and trading info during pre-game period."""
+        screen = self.game.screen
+        screen.fill((20, 20, 40))  # Dark blue background
+        
+        # Calculate remaining time
+        remaining_ticks = self.PRE_GAME_TRADING_TICKS - self.pre_game_timer
+        remaining_seconds = remaining_ticks // 60
+        minutes = remaining_seconds // 60
+        seconds = remaining_seconds % 60
+        
+        # Title
+        title = self.hud_font_lg.render("PRE-GAME TRADING", True, (100, 200, 255))
+        title_rect = title.get_rect(center=(WIDTH // 2, HEIGHT // 4))
+        screen.blit(title, title_rect)
+        
+        # Countdown timer
+        timer_color = (255, 200, 50) if remaining_seconds > 60 else (255, 100, 100)
+        timer_text = self.hud_font_lg.render(f"{minutes}:{seconds:02d}", True, timer_color)
+        timer_rect = timer_text.get_rect(center=(WIDTH // 2, HEIGHT // 2))
+        screen.blit(timer_text, timer_rect)
+        
+        # Info text
+        info_lines = [
+            "Buy agent tokens now!",
+            "Trading will lock when the game starts.",
+            "",
+            "Winners' token holders split 90% of prize pool."
+        ]
+        
+        y_offset = HEIGHT * 3 // 4
+        for line in info_lines:
+            info = self.hud_font.render(line, True, WHITE)
+            info_rect = info.get_rect(center=(WIDTH // 2, y_offset))
+            screen.blit(info, info_rect)
+            y_offset += 35
+        
+        # Agent list
+        agents_title = self.hud_font_sm.render("Agents in this game:", True, (150, 150, 150))
+        agents_rect = agents_title.get_rect(center=(WIDTH // 2, HEIGHT - 100))
+        screen.blit(agents_title, agents_rect)
+        
+        agent_text = ", ".join(self.all_colours)
+        agents_display = self.hud_font_sm.render(agent_text, True, (200, 200, 200))
+        agents_display_rect = agents_display.get_rect(center=(WIDTH // 2, HEIGHT - 70))
+        screen.blit(agents_display, agents_display_rect)
+        
+        pg.display.flip()

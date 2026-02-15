@@ -332,6 +332,136 @@ GAME_RESOLVER_ABI = [
     },
 ]
 
+# ---------------------------------------------------------------------------
+# Persistent Tokenization ABIs
+# ---------------------------------------------------------------------------
+
+PERSISTENT_AGENT_TOKEN_ABI = [
+    {
+        "inputs": [{"name": "_enabled", "type": "bool"}],
+        "name": "setTradingEnabled",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [{"name": "won", "type": "bool"}],
+        "name": "updateStats",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "receiveRewards",
+        "outputs": [],
+        "stateMutability": "payable",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "agentName",
+        "outputs": [{"name": "", "type": "string"}],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "gamesPlayed",
+        "outputs": [{"name": "", "type": "uint256"}],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "gamesWon",
+        "outputs": [{"name": "", "type": "uint256"}],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
+        "name": "winRate",
+        "outputs": [{"name": "", "type": "uint256"}],
+        "stateMutability": "view",
+        "type": "function"
+    },
+]
+
+AGENT_TOKEN_REGISTRY_ABI = [
+    {
+        "inputs": [{"name": "agentName", "type": "string"}, {"name": "personality", "type": "string"}],
+        "name": "createAgentToken",
+        "outputs": [{"name": "", "type": "address"}],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [{"name": "agentName", "type": "string"}, {"name": "personality", "type": "string"}],
+        "name": "getOrCreateToken",
+        "outputs": [{"name": "", "type": "address"}],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [{"name": "", "type": "string"}],
+        "name": "agentTokens",
+        "outputs": [{"name": "", "type": "address"}],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "anonymous": False,
+        "inputs": [
+            {"indexed": False, "name": "agentName", "type": "string"},
+            {"indexed": False, "name": "tokenAddress", "type": "address"},
+            {"indexed": False, "name": "timestamp", "type": "uint256"}
+        ],
+        "name": "AgentTokenCreated",
+        "type": "event"
+    },
+]
+
+GAME_PRIZE_POOL_ABI = [
+    {
+        "inputs": [{"name": "gameId", "type": "uint256"}],
+        "name": "deposit",
+        "outputs": [],
+        "stateMutability": "payable",
+        "type": "function"
+    },
+    {
+        "inputs": [
+            {"name": "gameId", "type": "uint256"},
+            {"name": "winningTokens", "type": "address[]"},
+            {"name": "percentages", "type": "uint256[]"}
+        ],
+        "name": "distributeRewards",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [{"name": "gameId", "type": "uint256"}, {"name": "tokenAddress", "type": "address"}],
+        "name": "claimReward",
+        "outputs": [],
+        "stateMutability": "nonpayable",
+        "type": "function"
+    },
+    {
+        "inputs": [{"name": "gameId", "type": "uint256"}],
+        "name": "getGameStats",
+        "outputs": [
+            {"name": "totalDeposited", "type": "uint256"},
+            {"name": "prizePool", "type": "uint256"},
+            {"name": "platformFee", "type": "uint256"},
+            {"name": "distributed", "type": "bool"}
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+]
+
 
 # ---------------------------------------------------------------------------
 # Event Logger (FR-6 from Dialogue PRD + Settlement requirements)
@@ -499,6 +629,9 @@ class BlockchainConnector:
             ("GameRegistry", self.game_registry_address, GAME_REGISTRY_ABI),
             ("PredictionMarket", self.prediction_market_address, PREDICTION_MARKET_ABI),
             ("GameResolver", self.game_resolver_address, GAME_RESOLVER_ABI),
+            # Persistent tokenization contracts
+            ("AgentTokenRegistry", os.environ.get("AGENT_TOKEN_REGISTRY_ADDRESS", ""), AGENT_TOKEN_REGISTRY_ABI),
+            ("GamePrizePool", os.environ.get("GAME_PRIZE_POOL_ADDRESS", ""), GAME_PRIZE_POOL_ABI),
         ]
         
         for name, address, abi in contract_configs:
@@ -509,7 +642,9 @@ class BlockchainConnector:
                 )
                 print(f"  [CHAIN] Loaded {name} at {address[:10]}...")
             else:
-                print(f"  [CHAIN] Warning: {name} address not set")
+                if name not in ["AgentTokenRegistry", "GamePrizePool"]:
+                    # Only warn for non-tokenization contracts
+                    print(f"  [CHAIN] Warning: {name} address not set")
 
     def _send_transaction(self, contract_name: str, method: str, args: list) -> Any:
         """Build, sign, and send a transaction. Returns receipt."""
@@ -717,6 +852,15 @@ class MonadSusChainIntegration:
     def __init__(self, live_mode: bool = False):
         self.connector = BlockchainConnector(live_mode=live_mode)
         self.logger = EventLogger()
+        
+        # Import tokenization module
+        try:
+            from tokenization import PersistentTokenization
+            self.tokenization = PersistentTokenization(self.connector)
+        except ImportError:
+            print("  [CHAIN] Warning: tokenization.py not found, tokenization disabled")
+            self.tokenization = None
+        
         self.game_id: Optional[int] = None
         self.markets: dict[str, int] = {}  # question -> market_id
         self.agent_colours: list[str] = []
@@ -800,7 +944,13 @@ class MonadSusChainIntegration:
         # Batch resolve
         self.connector.resolve_game(self.game_id, outcomes)
 
-        # Update agent stats
+        # Distribute token rewards (90% of prize pool)
+        if self.tokenization:
+            self.tokenization.distribute_rewards(
+                self.game_id, winner, alive_agents, imposter_colour
+            )
+
+        # Update agent stats (both on-chain and tokenization)
         for colour in self.agent_colours:
             won = False
             if colour == imposter_colour:
@@ -808,6 +958,14 @@ class MonadSusChainIntegration:
             else:
                 won = (winner == "CREW")
             self.connector.update_agent_stats(colour, won)
+            
+            # Update token stats
+            if self.tokenization:
+                self.tokenization.update_agent_stats(colour, won)
+
+        # Unlock trading for next game
+        if self.tokenization:
+            self.tokenization.unlock_trading(self.game_id)
 
         # Export event log
         export_path = f"game_log_{self.game_id}.json"
