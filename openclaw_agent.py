@@ -62,6 +62,10 @@ class OpenClawAgentController(AgentController):
         self.last_action = {"type": "NONE"}
         self.action_cooldown = 0
         
+        # Meeting state tracking (same as SimpleAgent)
+        self.has_voted = False
+        self.has_spoken = False
+        
         print(f"  [OPENCLAW] Initialized {agent_id} as {role} with {personality_type} personality")
     
     def _load_personality(self, personality_type: str, role: str) -> Dict[str, str]:
@@ -154,7 +158,13 @@ class OpenClawAgentController(AgentController):
             try:
                 return self._query_llm_gameplay(observation)
             except Exception as e:
-                print(f"  [OPENCLAW] LLM error: {e}, falling back to heuristics")
+                # Log to file for debugging
+                try:
+                    with open("openclaw_errors.log", "a") as f:
+                        f.write(f"[{self.agent_id}] Gameplay LLM error: {e}\n")
+                except:
+                    pass
+                print(f"  [OPENCLAW] {self.agent_id} LLM error: {e}, falling back")
         
         # Fallback: Simple heuristics
         if self.role == "IMPOSTER" and observation.get("can_kill"):
@@ -173,7 +183,12 @@ class OpenClawAgentController(AgentController):
             try:
                 return self._query_llm_dialogue(observation)
             except Exception as e:
-                print(f"  [OPENCLAW] LLM error: {e}, falling back to templates")
+                try:
+                    with open("openclaw_errors.log", "a") as f:
+                        f.write(f"[{self.agent_id}] Dialogue LLM error: {e}\n")
+                except:
+                    pass
+                print(f"  [OPENCLAW] {self.agent_id} LLM error: {e}, falling back")
         
         # Fallback: Template-based dialogue
         alive = observation.get("alive_agents", [])
@@ -197,7 +212,12 @@ class OpenClawAgentController(AgentController):
             try:
                 return self._query_llm_vote(observation)
             except Exception as e:
-                print(f"  [OPENCLAW] LLM error: {e}, falling back to random")
+                try:
+                    with open("openclaw_errors.log", "a") as f:
+                        f.write(f"[{self.agent_id}] Vote LLM error: {e}\n")
+                except:
+                    pass
+                print(f"  [OPENCLAW] {self.agent_id} LLM error: {e}, falling back")
         
         # Fallback: Random vote or skip
         alive = observation.get("alive_agents", [])

@@ -5,6 +5,9 @@ Manages persistent agent tokens that survive across games.
 Integrates with AgentTokenRegistry and GamePrizePool contracts.
 """
 
+import os
+from contract_abis import PERSISTENT_AGENT_TOKEN_ABI, AGENT_TOKEN_REGISTRY_ABI, GAME_PRIZE_POOL_ABI
+
 class PersistentTokenization:
     """Manages persistent agent tokens across games."""
     
@@ -64,6 +67,11 @@ class PersistentTokenization:
                 "agentTokens",
                 [agent_name]
             )
+            
+            # Validate token was created successfully
+            if not token_address or token_address == "0x0000000000000000000000000000000000000000":
+                raise ValueError(f"Failed to create token for {agent_name}")
+            
             self.agent_tokens[agent_name] = token_address
             return token_address
             

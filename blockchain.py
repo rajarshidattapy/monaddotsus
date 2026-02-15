@@ -333,134 +333,15 @@ GAME_RESOLVER_ABI = [
 ]
 
 # ---------------------------------------------------------------------------
-# Persistent Tokenization ABIs
+# Contract ABIs
 # ---------------------------------------------------------------------------
 
-PERSISTENT_AGENT_TOKEN_ABI = [
-    {
-        "inputs": [{"name": "_enabled", "type": "bool"}],
-        "name": "setTradingEnabled",
-        "outputs": [],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
-        "inputs": [{"name": "won", "type": "bool"}],
-        "name": "updateStats",
-        "outputs": [],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
-        "inputs": [],
-        "name": "receiveRewards",
-        "outputs": [],
-        "stateMutability": "payable",
-        "type": "function"
-    },
-    {
-        "inputs": [],
-        "name": "agentName",
-        "outputs": [{"name": "", "type": "string"}],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [],
-        "name": "gamesPlayed",
-        "outputs": [{"name": "", "type": "uint256"}],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [],
-        "name": "gamesWon",
-        "outputs": [{"name": "", "type": "uint256"}],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "inputs": [],
-        "name": "winRate",
-        "outputs": [{"name": "", "type": "uint256"}],
-        "stateMutability": "view",
-        "type": "function"
-    },
-]
-
-AGENT_TOKEN_REGISTRY_ABI = [
-    {
-        "inputs": [{"name": "agentName", "type": "string"}, {"name": "personality", "type": "string"}],
-        "name": "createAgentToken",
-        "outputs": [{"name": "", "type": "address"}],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
-        "inputs": [{"name": "agentName", "type": "string"}, {"name": "personality", "type": "string"}],
-        "name": "getOrCreateToken",
-        "outputs": [{"name": "", "type": "address"}],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
-        "inputs": [{"name": "", "type": "string"}],
-        "name": "agentTokens",
-        "outputs": [{"name": "", "type": "address"}],
-        "stateMutability": "view",
-        "type": "function"
-    },
-    {
-        "anonymous": False,
-        "inputs": [
-            {"indexed": False, "name": "agentName", "type": "string"},
-            {"indexed": False, "name": "tokenAddress", "type": "address"},
-            {"indexed": False, "name": "timestamp", "type": "uint256"}
-        ],
-        "name": "AgentTokenCreated",
-        "type": "event"
-    },
-]
-
-GAME_PRIZE_POOL_ABI = [
-    {
-        "inputs": [{"name": "gameId", "type": "uint256"}],
-        "name": "deposit",
-        "outputs": [],
-        "stateMutability": "payable",
-        "type": "function"
-    },
-    {
-        "inputs": [
-            {"name": "gameId", "type": "uint256"},
-            {"name": "winningTokens", "type": "address[]"},
-            {"name": "percentages", "type": "uint256[]"}
-        ],
-        "name": "distributeRewards",
-        "outputs": [],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
-        "inputs": [{"name": "gameId", "type": "uint256"}, {"name": "tokenAddress", "type": "address"}],
-        "name": "claimReward",
-        "outputs": [],
-        "stateMutability": "nonpayable",
-        "type": "function"
-    },
-    {
-        "inputs": [{"name": "gameId", "type": "uint256"}],
-        "name": "getGameStats",
-        "outputs": [
-            {"name": "totalDeposited", "type": "uint256"},
-            {"name": "prizePool", "type": "uint256"},
-            {"name": "platformFee", "type": "uint256"},
-            {"name": "distributed", "type": "bool"}
-        ],
-        "stateMutability": "view",
-        "type": "function"
-    },
-]
+# Import ABIs from separate file to avoid circular imports
+from contract_abis import (
+    PERSISTENT_AGENT_TOKEN_ABI,
+    AGENT_TOKEN_REGISTRY_ABI,
+    GAME_PRIZE_POOL_ABI
+)
 
 
 # ---------------------------------------------------------------------------
@@ -912,6 +793,23 @@ class MonadSusChainIntegration:
             self.markets[f"{colour}_SURVIVES"] = self.connector.create_market(
                 self.game_id, q_surv
             )
+
+    def on_pre_game_trading_start(self):
+        """Called when pre-game trading period begins."""
+        print(f"  [CHAIN] Pre-game trading started for game {self.game_id}")
+        
+        # Trading is unlocked by default, no action needed
+        # This is just a notification hook for future extensions
+        if self.tokenization:
+            print(f"  [CHAIN] Spectators can now trade agent tokens")
+
+    def on_game_actually_start(self):
+        """Called when game actually starts (after trading period)."""
+        print(f"  [CHAIN] Game {self.game_id} starting - locking trading")
+        
+        # Lock all agent token trading
+        if self.tokenization:
+            self.tokenization.lock_trading(self.game_id)
 
     def on_game_end(self, winner: str, imposter_colour: str, alive_agents: list[str]):
         """Called when game ends. Resolves all markets."""
