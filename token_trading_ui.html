@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MonadSus - Agent Trading</title>
+    <style>
+        :root {
+            --bg-dark: #1a1a2e;
+            --bg-card: #16213e;
+            --accent: #0f3460;
+            --primary: #e94560;
+            --text: #eee;
+            --success: #4ade80;
+            --warning: #fbbf24;
+            --danger: #ef4444;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: var(--bg-dark);
+            color: var(--text);
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Inter', sans-serif;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px 0;
+            border-bottom: 2px solid var(--accent);
+            margin-bottom: 30px;
+        }
+
+        h1 {
+            font-size: 32px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        #connectWallet {
+            background: var(--primary);
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        #connectWallet:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(233, 69, 96, 0.4);
+        }
+
+        #walletAddress {
+            background: var(--bg-card);
+            padding: 8px 16px;
+            border-radius: 6px;
+            font-family: monospace;
+            margin-left: 10px;
+        }
+
+        #countdown {
+            text-align: center;
+            padding: 40px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 15px;
+            margin-bottom: 30px;
+        }
+
+        #countdown h2 {
+            font-size: 24px;
+            margin-bottom: 20px;
+        }
+
+        #timer {
+            font-size: 72px;
+            font-weight: bold;
+            color: var(--success);
+            margin: 20px 0;
+        }
+
+        #timer.warning {
+            color: var(--warning);
+        }
+
+        #timer.danger {
+            color: var(--danger);
+        }
+
+        #status {
+            font-size: 18px;
+            opacity: 0.9;
+        }
+
+        #prizePool {
+            background: var(--bg-card);
+            padding: 30px;
+            border-radius: 12px;
+            margin-bottom: 30px;
+        }
+
+        #prizePool h3 {
+            margin-bottom: 20px;
+            font-size: 20px;
+        }
+
+        #totalDeposited {
+            font-size: 36px;
+            font-weight: bold;
+            color: var(--success);
+            margin-bottom: 15px;
+        }
+
+        #breakdown {
+            display: flex;
+            gap: 30px;
+            font-size: 16px;
+        }
+
+        #breakdown span {
+            opacity: 0.8;
+        }
+
+        #breakdown strong {
+            color: var(--text);
+            opacity: 1;
+        }
+
+        #agentTokens h3 {
+            margin-bottom: 20px;
+            font-size: 20px;
+        }
+
+        #tokenList {
+            display: grid;
+            gap: 15px;
+        }
+
+        .token-card {
+            background: var(--bg-card);
+            border-radius: 12px;
+            padding: 20px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            transition: all 0.3s;
+        }
+
+        .token-card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+        }
+
+        .token-info h4 {
+            font-size: 20px;
+            margin-bottom: 8px;
+        }
+
+        .token-stats {
+            display: flex;
+            gap: 20px;
+            font-size: 14px;
+            opacity: 0.7;
+        }
+
+        .token-actions {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .token-actions input {
+            background: var(--bg-dark);
+            border: 1px solid var(--accent);
+            color: var(--text);
+            padding: 10px;
+            border-radius: 6px;
+            width: 150px;
+            font-size: 14px;
+        }
+
+        .buy-button {
+            background: var(--success);
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 8px;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .buy-button:hover:not(:disabled) {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(74, 222, 128, 0.4);
+        }
+
+        .buy-button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            font-size: 18px;
+            opacity: 0.7;
+        }
+
+        .error {
+            background: var(--danger);
+            color: white;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+
+        @media (max-width: 768px) {
+            .token-card {
+                flex-direction: column;
+                gap: 15px;
+            }
+
+            #breakdown {
+                flex-direction: column;
+                gap: 10px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🎮 MonadSus Agent Trading</h1>
+            <div>
+                <button id="connectWallet">Connect Wallet</button>
+                <span id="walletAddress"></span>
+            </div>
+        </header>
+
+        <div id="errorMessage" class="error" style="display: none;"></div>
+
+        <section id="countdown">
+            <h2>Pre-Game Trading Period</h2>
+            <div id="timer">5:00</div>
+            <p id="status">Trading Active - Buy agent tokens now!</p>
+        </section>
+
+        <section id="prizePool">
+            <h3>💰 Prize Pool</h3>
+            <div id="totalDeposited">0 MON</div>
+            <div id="breakdown">
+                <span>Winners (90%): <strong id="winnersPrize">0 MON</strong></span>
+                <span>Platform (10%): <strong id="platformFee">0 MON</strong></span>
+            </div>
+        </section>
+
+        <section id="agentTokens">
+            <h3>🤖 Agent Tokens</h3>
+            <div id="tokenList">
+                <div class="loading">Connect your wallet to view agent tokens...</div>
+            </div>
+        </section>
+    </div>
+
+    <script src="https://cdn.ethers.io/lib/ethers-5.7.2.umd.min.js"></script>
+    <script>
+        // Contract addresses (update after deployment)
+        const REGISTRY_ADDRESS = "0x0000000000000000000000000000000000000000"; // TODO: Update
+        const PRIZE_POOL_ADDRESS = "0x0000000000000000000000000000000000000000"; // TODO: Update
+
+        // Contract ABIs
+        const REGISTRY_ABI = [
+            "function getAllTokens() view returns (address[])",
+            "function agentTokens(string) view returns (address)"
+        ];
+
+        const TOKEN_ABI = [
+            "function agentName() view returns (string)",
+            "function gamesPlayed() view returns (uint256)",
+            "function gamesWon() view returns (uint256)",
+            "function winRate() view returns (uint256)",
+            "function balanceOf(address) view returns (uint256)",
+            "function totalSupply() view returns (uint256)"
+        ];
+
+        const PRIZE_POOL_ABI = [
+            "function deposit(uint256 gameId) payable",
+            "function getGameStats(uint256) view returns (uint256 totalDeposited, uint256 prizePool, uint256 platformFee, bool distributed)",
+            "function claimReward(uint256 gameId, address tokenAddress)"
+        ];
+
+        let provider, signer, userAddress;
+        let gameId = 1; // Current game ID
+        let countdownInterval;
+        let updateInterval;
+
+        // Connect wallet
+        async function connectWallet() {
+            try {
+                if (typeof window.ethereum === 'undefined') {
+                    showError('Please install MetaMask to use this app!');
+                    return;
+                }
+
+                provider = new ethers.providers.Web3Provider(window.ethereum);
+                await provider.send("eth_requestAccounts", []);
+                signer = provider.getSigner();
+                userAddress = await signer.getAddress();
+
+                document.getElementById('walletAddress').innerText =
+                    userAddress.slice(0, 6) + '...' + userAddress.slice(-4);
+                document.getElementById('connectWallet').innerText = 'Connected';
+                document.getElementById('connectWallet').disabled = true;
+
+                await loadAgentTokens();
+                startCountdown();
+                startAutoUpdate();
+            } catch (error) {
+                showError('Failed to connect wallet: ' + error.message);
+            }
+        }
+
+        // Load agent tokens
+        async function loadAgentTokens() {
+            try {
+                const tokenList = document.getElementById('tokenList');
+                tokenList.innerHTML = '<div class="loading">Loading agent tokens...</div>';
+
+                // Simulate tokens if contracts not deployed
+                if (REGISTRY_ADDRESS === "0x0000000000000000000000000000000000000000") {
+                    tokenList.innerHTML = '';
+                    const mockAgents = ['Red', 'Blue', 'Green', 'Yellow', 'Orange', 'Black', 'Brown', 'Pink', 'Purple', 'White'];
+                    
+                    for (const agent of mockAgents) {
+                        tokenList.innerHTML += createTokenCard(agent, Math.floor(Math.random() * 10), Math.floor(Math.random() * 100), '0x' + '0'.repeat(40));
+                    }
+                    return;
+                }
+
+                const registry = new ethers.Contract(REGISTRY_ADDRESS, REGISTRY_ABI, provider);
+                const tokens = await registry.getAllTokens();
+
+                tokenList.innerHTML = '';
+
+                for (const tokenAddr of tokens) {
+                    const token = new ethers.Contract(tokenAddr, TOKEN_ABI, provider);
+                    const name = await token.agentName();
+                    const gamesPlayed = await token.gamesPlayed();
+                    const winRate = await token.winRate();
+
+                    tokenList.innerHTML += createTokenCard(name, gamesPlayed, winRate, tokenAddr);
+                }
+            } catch (error) {
+                showError('Failed to load tokens: ' + error.message);
+            }
+        }
+
+        // Create token card HTML
+        function createTokenCard(name, gamesPlayed, winRate, address) {
+            return `
+                <div class="token-card">
+                    <div class="token-info">
+                        <h4>${name}</h4>
+                        <div class="token-stats">
+                            <span>Games: ${gamesPlayed}</span>
+                            <span>Win Rate: ${winRate}%</span>
+                        </div>
+                    </div>
+                    <div class="token-actions">
+                        <input type="number" id="amount-${address}" 
+                               placeholder="Amount (MON)" min="0.01" step="0.01" value="1">
+                        <button class="buy-button" onclick="buyToken('${address}', '${name}')">
+                            Buy
+                        </button>
+                    </div>
+                </div>
+            `;
+        }
+
+        // Buy token
+        async function buyToken(tokenAddress, agentName) {
+            try {
+                const amount = document.getElementById(`amount-${tokenAddress}`).value;
+                if (!amount || amount <= 0) {
+                    showError('Please enter a valid amount');
+                    return;
+                }
+
+                if (!signer) {
+                    showError('Please connect your wallet first');
+                    return;
+                }
+
+                // Simulate if contracts not deployed
+                if (PRIZE_POOL_ADDRESS === "0x0000000000000000000000000000000000000000") {
+                    alert(`✅ Purchased ${amount} MON worth of ${agentName} tokens!\n\n(Simulation mode - contracts not deployed yet)`);
+                    return;
+                }
+
+                const prizePool = new ethers.Contract(PRIZE_POOL_ADDRESS, PRIZE_POOL_ABI, signer);
+                const tx = await prizePool.deposit(gameId, {
+                    value: ethers.utils.parseEther(amount)
+                });
+
+                alert('Transaction submitted! Waiting for confirmation...');
+                await tx.wait();
+                alert(`✅ Successfully purchased ${agentName} tokens! Good luck!`);
+                
+                await updatePrizePool();
+            } catch (error) {
+                showError('Failed to buy tokens: ' + error.message);
+            }
+        }
+
+        // Countdown timer
+        function startCountdown() {
+            let seconds = 300; // 5 minutes
+
+            countdownInterval = setInterval(() => {
+                const mins = Math.floor(seconds / 60);
+                const secs = seconds % 60;
+                const timerEl = document.getElementById('timer');
+                timerEl.innerText = `${mins}:${secs.toString().padStart(2, '0')}`;
+
+                // Color changes
+                if (seconds <= 60) {
+                    timerEl.className = 'danger';
+                } else if (seconds <= 120) {
+                    timerEl.className = 'warning';
+                }
+
+                if (seconds <= 0) {
+                    clearInterval(countdownInterval);
+                    document.getElementById('status').innerText = '🔒 Trading Locked - Game in Progress';
+                    disableTrading();
+                }
+
+                seconds--;
+            }, 1000);
+        }
+
+        // Disable trading
+        function disableTrading() {
+            document.querySelectorAll('.buy-button').forEach(btn => {
+                btn.disabled = true;
+            });
+        }
+
+        // Update prize pool
+        async function updatePrizePool() {
+            try {
+                if (PRIZE_POOL_ADDRESS === "0x0000000000000000000000000000000000000000") {
+                    return; // Skip if not deployed
+                }
+
+                const prizePool = new ethers.Contract(PRIZE_POOL_ADDRESS, PRIZE_POOL_ABI, provider);
+                const stats = await prizePool.getGameStats(gameId);
+
+                const total = ethers.utils.formatEther(stats.totalDeposited);
+                const prize = ethers.utils.formatEther(stats.prizePool);
+                const fee = ethers.utils.formatEther(stats.platformFee);
+
+                document.getElementById('totalDeposited').innerText = `${parseFloat(total).toFixed(2)} MON`;
+                document.getElementById('winnersPrize').innerText = `${parseFloat(prize).toFixed(2)} MON`;
+                document.getElementById('platformFee').innerText = `${parseFloat(fee).toFixed(2)} MON`;
+            } catch (error) {
+                console.error('Failed to update prize pool:', error);
+            }
+        }
+
+        // Auto-update every 5 seconds
+        function startAutoUpdate() {
+            updateInterval = setInterval(updatePrizePool, 5000);
+        }
+
+        // Show error
+        function showError(message) {
+            const errorEl = document.getElementById('errorMessage');
+            errorEl.innerText = message;
+            errorEl.style.display = 'block';
+            setTimeout(() => {
+                errorEl.style.display = 'none';
+            }, 5000);
+        }
+
+        // Initialize
+        document.getElementById('connectWallet').onclick = connectWallet;
+
+        // Auto-connect if already connected
+        window.addEventListener('load', async () => {
+            if (typeof window.ethereum !== 'undefined') {
+                const accounts = await window.ethereum.request({ method: 'eth_accounts' });
+                if (accounts.length > 0) {
+                    connectWallet();
+                }
+            }
+        });
+    </script>
+</body>
+</html>

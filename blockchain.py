@@ -332,6 +332,17 @@ GAME_RESOLVER_ABI = [
     },
 ]
 
+# ---------------------------------------------------------------------------
+# Contract ABIs
+# ---------------------------------------------------------------------------
+
+# Import ABIs from separate file to avoid circular imports
+from contract_abis import (
+    PERSISTENT_AGENT_TOKEN_ABI,
+    AGENT_TOKEN_REGISTRY_ABI,
+    GAME_PRIZE_POOL_ABI
+)
+
 
 # ---------------------------------------------------------------------------
 # Event Logger (FR-6 from Dialogue PRD + Settlement requirements)
@@ -499,6 +510,9 @@ class BlockchainConnector:
             ("GameRegistry", self.game_registry_address, GAME_REGISTRY_ABI),
             ("PredictionMarket", self.prediction_market_address, PREDICTION_MARKET_ABI),
             ("GameResolver", self.game_resolver_address, GAME_RESOLVER_ABI),
+            # Persistent tokenization contracts
+            ("AgentTokenRegistry", os.environ.get("AGENT_TOKEN_REGISTRY_ADDRESS", ""), AGENT_TOKEN_REGISTRY_ABI),
+            ("GamePrizePool", os.environ.get("GAME_PRIZE_POOL_ADDRESS", ""), GAME_PRIZE_POOL_ABI),
         ]
         
         for name, address, abi in contract_configs:
@@ -509,7 +523,9 @@ class BlockchainConnector:
                 )
                 print(f"  [CHAIN] Loaded {name} at {address[:10]}...")
             else:
-                print(f"  [CHAIN] Warning: {name} address not set")
+                if name not in ["AgentTokenRegistry", "GamePrizePool"]:
+                    # Only warn for non-tokenization contracts
+                    print(f"  [CHAIN] Warning: {name} address not set")
 
     def _send_transaction(self, contract_name: str, method: str, args: list) -> Any:
         """Build, sign, and send a transaction. Returns receipt."""
@@ -717,6 +733,15 @@ class MonadSusChainIntegration:
     def __init__(self, live_mode: bool = False):
         self.connector = BlockchainConnector(live_mode=live_mode)
         self.logger = EventLogger()
+        
+        # Import tokenization module
+        try:
+            from tokenization import PersistentTokenization
+            self.tokenization = PersistentTokenization(self.connector)
+        except ImportError:
+            print("  [CHAIN] Warning: tokenization.py not found, tokenization disabled")
+            self.tokenization = None
+        
         self.game_id: Optional[int] = None
         self.markets: dict[str, int] = {}  # question -> market_id
         self.agent_colours: list[str] = []
@@ -769,6 +794,23 @@ class MonadSusChainIntegration:
                 self.game_id, q_surv
             )
 
+    def on_pre_game_trading_start(self):
+        """Called when pre-game trading period begins."""
+        print(f"  [CHAIN] Pre-game trading started for game {self.game_id}")
+        
+        # Trading is unlocked by default, no action needed
+        # This is just a notification hook for future extensions
+        if self.tokenization:
+            print(f"  [CHAIN] Spectators can now trade agent tokens")
+
+    def on_game_actually_start(self):
+        """Called when game actually starts (after trading period)."""
+        print(f"  [CHAIN] Game {self.game_id} starting - locking trading")
+        
+        # Lock all agent token trading
+        if self.tokenization:
+            self.tokenization.lock_trading(self.game_id)
+
     def on_game_end(self, winner: str, imposter_colour: str, alive_agents: list[str]):
         """Called when game ends. Resolves all markets."""
         assert self.game_id is not None
@@ -800,7 +842,13 @@ class MonadSusChainIntegration:
         # Batch resolve
         self.connector.resolve_game(self.game_id, outcomes)
 
-        # Update agent stats
+        # Distribute token rewards (90% of prize pool)
+        if self.tokenization:
+            self.tokenization.distribute_rewards(
+                self.game_id, winner, alive_agents, imposter_colour
+            )
+
+        # Update agent stats (both on-chain and tokenization)
         for colour in self.agent_colours:
             won = False
             if colour == imposter_colour:
@@ -808,6 +856,14 @@ class MonadSusChainIntegration:
             else:
                 won = (winner == "CREW")
             self.connector.update_agent_stats(colour, won)
+            
+            # Update token stats
+            if self.tokenization:
+                self.tokenization.update_agent_stats(colour, won)
+
+        # Unlock trading for next game
+        if self.tokenization:
+            self.tokenization.unlock_trading(self.game_id)
 
         # Export event log
         export_path = f"game_log_{self.game_id}.json"
